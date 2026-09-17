@@ -9,7 +9,6 @@ Usage:
 
 import argparse
 import logging
-import random
 import tempfile
 import time
 from dataclasses import dataclass
@@ -20,6 +19,7 @@ from core.cache_logic import SmartCache
 from core.config import LLM_COMPLETION_COST_PER_1K, LLM_MODEL_NAME, LLM_PROMPT_COST_PER_1K
 from core.llm_client import build_client, call_llm
 from core.logging_config import setup_logging
+from core.mock_llm import MockClient
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,30 @@ QUERY_GROUPS = [
     [
         "What's the best way to learn a new language?",
     ],
+    [
+        "What are the tradeoffs between REST and GraphQL for a mobile app "
+        "backend, and which would you recommend for a team building an "
+        "offline-first app?",
+        "Comparing REST and GraphQL for a mobile backend - what are the "
+        "tradeoffs, and what's better for an offline-first app?",
+    ],
+    [
+        "What's the difference between SQL and NoSQL databases, and when "
+        "should I pick one over the other for a high-write analytics workload?",
+        "SQL vs NoSQL for a high-write analytics workload - what's the "
+        "difference, and which should I use?",
+    ],
+    [
+        "How would you design a rate limiter for a public API that needs to "
+        "support both per-user and per-IP limits, including how it should "
+        "behave under a traffic spike?",
+        "Walk me through designing a rate limiter for a public API with "
+        "per-user and per-IP limits that also holds up under a traffic spike.",
+    ],
+    [
+        "What are the pros and cons of a microservices architecture versus a "
+        "monolith for a team of about five engineers?",
+    ],
 ]
 
 QUERIES = [query for group in QUERY_GROUPS for query in group]
@@ -61,48 +85,6 @@ class CallResult:
     hit: bool
     prompt_tokens: int = 0
     completion_tokens: int = 0
-
-
-class MockClient:
-    """Stands in for the OpenAI client so the benchmark can run without an API
-    key or network access. Simulates realistic network latency and returns a
-    canned answer with plausible token counts instead of a real completion."""
-
-    class _Usage:
-        def __init__(self, prompt_tokens, completion_tokens):
-            self.prompt_tokens = prompt_tokens
-            self.completion_tokens = completion_tokens
-
-    class _Message:
-        def __init__(self, content):
-            self.content = content
-
-    class _Choice:
-        def __init__(self, content):
-            self.message = MockClient._Message(content)
-
-    class _Completion:
-        def __init__(self, content, prompt_tokens, completion_tokens):
-            self.choices = [MockClient._Choice(content)]
-            self.usage = MockClient._Usage(prompt_tokens, completion_tokens)
-
-    class _Completions:
-        def create(self, model, messages):
-            time.sleep(random.uniform(0.3, 0.8))  # simulate real network latency
-            question = messages[0]["content"]
-            answer = f"[mock answer to: {question}]"
-            return MockClient._Completion(
-                answer,
-                prompt_tokens=max(1, len(question.split())),
-                completion_tokens=max(1, len(answer.split())),
-            )
-
-    class _Chat:
-        def __init__(self):
-            self.completions = MockClient._Completions()
-
-    def __init__(self):
-        self.chat = MockClient._Chat()
 
 
 def estimate_cost(result):

@@ -12,7 +12,6 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-
 def build_client():
     api_key = os.getenv("OPENROUTER_KEY")
     if not api_key:

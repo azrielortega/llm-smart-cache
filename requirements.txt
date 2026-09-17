@@ -1,0 +1,9 @@
+# Runtime
+openai>=3.14.1
+python-dotenv>=1.2.3
+numpy>=2.5.3
+faiss-cpu>=1.15.1
+sentence-transformers>=6.0.1
+
+# Testing
+pytest>=9.1.1
