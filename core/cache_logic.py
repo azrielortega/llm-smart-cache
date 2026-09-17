@@ -1,8 +1,11 @@
+import logging
 import os
 
 from core.config import CACHE_MAX_DISTANCE, EMBEDDING_DIMENSION
 from core.embedder import Embedder
 from core.vector_db import VectorDB
+
+logger = logging.getLogger(__name__)
 
 
 class SmartCache:
@@ -37,10 +40,10 @@ class SmartCache:
         results = self.db.search(query_vector)
 
         if results and results[0]["distance"] < self.max_distance:
-            print("Cache HIT!")
+            logger.debug("Cache HIT (distance=%.4f) for: %r", results[0]["distance"], user_text)
             return results[0]["metadata"]["answer"]
 
-        print("Cache MISS...")
+        logger.debug("Cache MISS for: %r", user_text)
         return None
 
     def update(self, question, answer):

@@ -35,3 +35,12 @@ def _get_float(name, default):
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 EMBEDDING_DIMENSION = _get_int("EMBEDDING_DIMENSION", 384)
 CACHE_MAX_DISTANCE = _get_float("CACHE_MAX_DISTANCE", 0.3)
+LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "openai/gpt-4o-mini")
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+# Rough OpenRouter pricing (USD per 1K tokens) for the default LLM_MODEL_NAME
+# ("openai/gpt-4o-mini"), used only to estimate $ saved in benchmark.py. If you
+# change LLM_MODEL_NAME to a model with different pricing, override these.
+LLM_PROMPT_COST_PER_1K = _get_float("LLM_PROMPT_COST_PER_1K", 0.00015)
+LLM_COMPLETION_COST_PER_1K = _get_float("LLM_COMPLETION_COST_PER_1K", 0.0006)

@@ -1,37 +1,33 @@
-import os
-
-from core.cache_logic import SmartCache
+import logging
 
 from dotenv import load_dotenv
 
-from openai import OpenAI
+from core.cache_logic import SmartCache
+from core.llm_client import build_client, call_llm
+from core.logging_config import setup_logging
 
-def get_response(user_input):
+logger = logging.getLogger(__name__)
+
+load_dotenv()
+
+
+def get_response(cache, client, user_input):
     cached_answer = cache.query(user_input)
     if cached_answer:
         return cached_answer
 
-    print("Calling LLM API")
-    new_answer = f"AI response to: {user_input}" 
-    
+    completion = call_llm(client, user_input)
+    new_answer = completion.choices[0].message.content
     cache.update(user_input, new_answer)
     return new_answer
 
 
-load_dotenv()
+if __name__ == "__main__":
+    setup_logging()
 
-AI_KEY = os.getenv("OPENROUTER_KEY")
+    cache = SmartCache()
+    client = build_client()
 
-if not AI_KEY:
-    raise ValueError("API KEY Not founnd!")
-
-client = OpenAI(
-    base_url = "https://openrouter.ai/api/v1",
-    api_key=AI_KEY)
-
-
-
-# cache = SmartCache(max_distance=0.3)
-
-# print(get_response("How to bake a cake?")) # Miss
-# print(get_response("How do I bake a cake?")) # HIT (Semantic similarity works!)
+    print(get_response(cache, client, "How to bake a cake?"))     # MISS -> calls the LLM
+    print(get_response(cache, client, "How do I bake a cake?"))   # HIT  -> semantic match, no LLM call
+    cache.save()
