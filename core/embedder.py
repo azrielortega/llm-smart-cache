@@ -1,8 +1,23 @@
 from sentence_transformers import SentenceTransformer
 
+from core.config import EMBEDDING_MODEL_NAME
+
+
 class Embedder:
-    def __init__(self):
-        self.model = SentenceTransformer('all-MiniLM-L6-v2')
+    def __init__(self, model_name=None):
+        self.model_name = model_name or EMBEDDING_MODEL_NAME
+        try:
+            self.model = SentenceTransformer(self.model_name)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to load embedding model {self.model_name!r}: {e}"
+            ) from e
 
     def encode(self, text):
-        return self.model.encode([text])
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(f"Cannot embed empty or invalid text: {text!r}")
+
+        try:
+            return self.model.encode([text])
+        except Exception as e:
+            raise RuntimeError(f"Embedding failed for text {text!r}: {e}") from e

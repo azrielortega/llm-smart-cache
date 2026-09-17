@@ -1,5 +1,6 @@
 import os
 
+from core.config import CACHE_MAX_DISTANCE, EMBEDDING_DIMENSION
 from core.embedder import Embedder
 from core.vector_db import VectorDB
 
@@ -15,14 +16,16 @@ class SmartCache:
     higher = looser matching (more hits, more risk of false positives).
     """
 
-    def __init__(self, max_distance=0.3, cache_dir="cache_data",
-                 ttl_seconds=None, max_size=1000):
-        self.embedder = Embedder()
-        self.max_distance = max_distance
+    def __init__(self, max_distance=None, cache_dir="cache_data",
+                 ttl_seconds=None, max_size=1000, model_name=None,
+                 embedding_dimension=None):
+        self.embedder = Embedder(model_name=model_name)
+        self.max_distance = CACHE_MAX_DISTANCE if max_distance is None else max_distance
         self.cache_dir = cache_dir
         os.makedirs(cache_dir, exist_ok=True)
 
         self.db = VectorDB(
+            dimension=embedding_dimension or EMBEDDING_DIMENSION,
             index_path=os.path.join(cache_dir, "index.faiss"),
             metadata_path=os.path.join(cache_dir, "metadata.json"),
             ttl_seconds=ttl_seconds,
