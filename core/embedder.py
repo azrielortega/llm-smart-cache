@@ -18,6 +18,6 @@ class Embedder:
             raise ValueError(f"Cannot embed empty or invalid text: {text!r}")
 
         try:
-            return self.model.encode([text], show_progress_bar=False)
+            return self.model.encode([text], show_progress_bar=False, normalize_embeddings=True)
         except Exception as e:
             raise RuntimeError(f"Embedding failed for text {text!r}: {e}") from e
