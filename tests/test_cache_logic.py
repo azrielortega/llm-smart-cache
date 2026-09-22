@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from core.cache_logic import SmartCache
@@ -43,6 +45,27 @@ def test_update_persists_to_disk(tmp_path, fake_sentence_transformer):
 
     reloaded = SmartCache(cache_dir=cache_dir, max_distance=0.05, embedding_dimension=384)
     assert reloaded.query("How to bake a cake?") == "Preheat the oven to 350F."
+
+
+def test_ttl_expired_nearest_match_falls_through_to_next_fresh_match(tmp_path, fake_sentence_transformer):
+    cache = SmartCache(
+        cache_dir=str(tmp_path / "cache"),
+        max_distance=0.05,
+        embedding_dimension=384,
+        ttl_seconds=100,
+    )
+    query_vector = cache.embedder.encode("How to bake a cake?")
+    near_vector = query_vector.copy()
+    near_vector[0][0] += 0.01  # tiny perturbation: still well within max_distance
+
+    # Nearest match (distance 0) - forced expired *after* both adds so it's
+    # still physically in the index (eviction is deferred to the next add()).
+    cache.db.add(query_vector, {"question": "exact", "answer": "stale answer"})
+    # Second-nearest match: close but not exact, and stays fresh.
+    cache.db.add(near_vector, {"question": "near", "answer": "fresh answer"})
+    cache.db._records[0]["created_at"] = time.time() - 10_000
+
+    assert cache.query("How to bake a cake?") == "fresh answer"
 
 
 def test_defaults_come_from_config(tmp_path, fake_sentence_transformer, monkeypatch):

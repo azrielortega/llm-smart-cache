@@ -13,18 +13,22 @@ class SmartCache:
 
     Backed by FAISS IndexFlatL2, which returns *squared* L2 distance between
     embeddings - smaller distance means more semantically similar. A cache hit
-    happens when the nearest stored question's distance to the incoming query is
-    below `max_distance`. Lower `max_distance` = stricter matching (fewer hits,
-    less risk of returning a wrong cached answer for a different question);
-    higher = looser matching (more hits, more risk of false positives).
+    happens when the closest of the top `search_k` stored questions (skipping
+    any that are TTL-expired) has a distance to the incoming query below
+    `max_distance`. Lower `max_distance` = stricter matching (fewer hits, less
+    risk of returning a wrong cached answer for a different question); higher =
+    looser matching (more hits, more risk of false positives). `search_k` only
+    matters when `ttl_seconds` is set - without TTL, the single nearest
+    neighbor is always the best candidate.
     """
 
     def __init__(self, max_distance=None, cache_dir="cache_data",
                  ttl_seconds=None, max_size=1000, model_name=None,
-                 embedding_dimension=None):
+                 embedding_dimension=None, search_k=5):
         self.embedder = Embedder(model_name=model_name)
         self.max_distance = CACHE_MAX_DISTANCE if max_distance is None else max_distance
         self.cache_dir = cache_dir
+        self.search_k = search_k
         os.makedirs(cache_dir, exist_ok=True)
 
         self.db = VectorDB(
@@ -37,11 +41,12 @@ class SmartCache:
 
     def query(self, user_text):
         query_vector = self.embedder.encode(user_text)
-        results = self.db.search(query_vector)
+        results = self.db.search(query_vector, k=self.search_k)
 
-        if results and results[0]["distance"] < self.max_distance:
-            logger.debug("Cache HIT (distance=%.4f) for: %r", results[0]["distance"], user_text)
-            return results[0]["metadata"]["answer"]
+        for result in results:
+            if result["distance"] < self.max_distance:
+                logger.debug("Cache HIT (distance=%.4f) for: %r", result["distance"], user_text)
+                return result["metadata"]["answer"]
 
         logger.debug("Cache MISS for: %r", user_text)
         return None
