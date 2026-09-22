@@ -9,7 +9,7 @@ another LLM call. Paraphrases hit the cache too, not just exact repeats.
 ### Why this matters
 
 LLM calls are slow and billed per token, but real traffic is full of
-repeats — the same handful of questions asked in slightly different words,
+repeats: the same handful of questions asked in slightly different words,
 over and over (support bots, FAQ assistants, internal tools). An exact-match
 cache misses almost all of that because it can't tell "how do I bake a cake"
 from "how to bake a cake." A semantic cache catches both, which is what
@@ -38,16 +38,16 @@ question ─▶ Embedder ─▶ VectorDB.search (FAISS, L2 distance)
               call                   return it
 ```
 
-- **`core/embedder.py`** — wraps `SentenceTransformer`, turns text into vectors.
-- **`core/vector_db.py`** — owns the FAISS index plus per-entry metadata
+- **`core/embedder.py`**: wraps `SentenceTransformer`, turns text into vectors.
+- **`core/vector_db.py`**: owns the FAISS index plus per-entry metadata
   (question, answer, timestamps) as one unit, with TTL and LRU/max-size
   eviction so the index doesn't grow unbounded. Persists to disk
   (`index.faiss` + `metadata.json`).
-- **`core/cache_logic.py`** (`SmartCache`) — the public interface: `query()` /
+- **`core/cache_logic.py`** (`SmartCache`): the public interface, `query()` /
   `update()` / `save()`, combining the embedder and vector DB.
-- **`core/llm_client.py`** — thin wrapper around the OpenAI SDK, pointed at
+- **`core/llm_client.py`**: thin wrapper around the OpenAI SDK, pointed at
   [OpenRouter](https://openrouter.ai/), used only on a cache miss.
-- **`core/config.py`** — every tunable (model names, distance threshold,
+- **`core/config.py`**: every tunable (model names, distance threshold,
   pricing, log level) reads from the environment with a working default.
 
 ## Setup
@@ -64,12 +64,12 @@ cp .env.example .env
 ```
 
 `OPENROUTER_KEY` is only required for real LLM calls (`main.py`, or `cli.py` /
-`benchmark.py` without `--mock`). Everything else has a sane default — see
+`benchmark.py` without `--mock`). Everything else has a sane default: see
 [Configuration](#configuration).
 
 ## Usage
 
-### CLI — try it interactively
+### CLI: try it interactively
 
 ```bash
 python cli.py                  # interactive REPL, real OpenRouter calls
@@ -79,7 +79,7 @@ python cli.py "question"       # single-shot: ask one question, print the answer
 
 In the REPL, `:stats` prints the session's hit rate and `:quit` (or Ctrl-D) exits.
 
-### Benchmark — quantify the value
+### Benchmark: quantify the value
 
 Runs the same set of questions once with no cache (every question hits the
 LLM) and once through `SmartCache` (paraphrases hit the cache instead), and
@@ -107,7 +107,7 @@ Estimated cost             $0.00020       $0.00012
 ```
 
 ($ saved is estimated from real token usage on the calls that do go through,
-multiplied by `LLM_PROMPT_COST_PER_1K` / `LLM_COMPLETION_COST_PER_1K` — see
+multiplied by `LLM_PROMPT_COST_PER_1K` / `LLM_COMPLETION_COST_PER_1K`: see
 Configuration.)
 
 ### Library usage
@@ -136,7 +136,7 @@ default, so none of this is required.
 
 | Variable                      | Default                | Meaning                                                                 |
 |--------------------------------|------------------------|--------------------------------------------------------------------------|
-| `OPENROUTER_KEY`               | —                       | API key for real LLM calls. Required unless you only use `--mock`.       |
+| `OPENROUTER_KEY`               | none                    | API key for real LLM calls. Required unless you only use `--mock`.       |
 | `EMBEDDING_MODEL_NAME`         | `all-MiniLM-L6-v2`      | `sentence-transformers` model used to embed questions.                   |
 | `EMBEDDING_DIMENSION`          | `384`                   | Must match the embedding model's output dimension.                       |
 | `CACHE_MAX_DISTANCE`           | `0.56`                  | Max squared L2 distance for a cache hit. Lower = stricter matching. Depends on `EMBEDDING_MODEL_NAME` - see [Tuning the threshold](#tuning-the-threshold). |
