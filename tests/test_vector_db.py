@@ -56,7 +56,7 @@ def test_save_without_paths_raises():
         db.save()
 
 
-def test_corrupted_index_metadata_mismatch_raises(tmp_path):
+def test_index_metadata_mismatch_starts_empty(tmp_path):
     index_path = str(tmp_path / "index.faiss")
     metadata_path = str(tmp_path / "metadata.json")
 
@@ -68,8 +68,33 @@ def test_corrupted_index_metadata_mismatch_raises(tmp_path):
     with open(metadata_path, "w") as f:
         json.dump([{"metadata": {}, "created_at": 0, "last_accessed": 0}] * 2, f)
 
-    with pytest.raises(RuntimeError, match="corrupted"):
-        VectorDB(dimension=DIM, index_path=index_path, metadata_path=metadata_path)
+    db = VectorDB(dimension=DIM, index_path=index_path, metadata_path=metadata_path)
+    assert db.index.ntotal == 0
+    assert db.search(make_vector(1)) == []
+
+
+def test_unreadable_metadata_starts_empty(tmp_path):
+    index_path = str(tmp_path / "index.faiss")
+    metadata_path = str(tmp_path / "metadata.json")
+
+    db = VectorDB(dimension=DIM, index_path=index_path, metadata_path=metadata_path)
+    db.add(make_vector(1), {"answer": "first"})
+    db.save()
+
+    with open(metadata_path, "w") as f:
+        f.write('[{"metadata": ')  # truncated JSON, as if a write was cut off
+
+    db = VectorDB(dimension=DIM, index_path=index_path, metadata_path=metadata_path)
+    assert db.index.ntotal == 0
+
+
+def test_save_leaves_no_temp_files(tmp_path):
+    db = VectorDB(dimension=DIM, index_path=str(tmp_path / "index.faiss"),
+                  metadata_path=str(tmp_path / "metadata.json"))
+    db.add(make_vector(1), {"answer": "first"})
+    db.save()
+
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["index.faiss", "metadata.json"]
 
 
 def test_ttl_expired_entry_is_excluded_from_search():

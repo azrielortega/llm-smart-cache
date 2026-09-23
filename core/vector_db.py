@@ -1,9 +1,12 @@
 import json
+import logging
 import os
 import time
 
 import faiss
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class VectorDB:
@@ -28,19 +31,7 @@ class VectorDB:
         self.ttl_seconds = ttl_seconds
         self.max_size = max_size
 
-        if index_path and os.path.exists(index_path):
-            self.index = faiss.read_index(index_path)
-        else:
-            self.index = faiss.IndexFlatL2(dimension)
-
-        self._records = self._load_records()
-
-        if self.index.ntotal != len(self._records):
-            raise RuntimeError(
-                f"VectorDB is corrupted: index has {self.index.ntotal} vectors "
-                f"but metadata has {len(self._records)} entries "
-                f"({self.index_path!r}, {self.metadata_path!r})."
-            )
+        self.index, self._records = self._load()
 
     def add(self, vector, metadata):
         now = time.time()
@@ -75,8 +66,15 @@ class VectorDB:
     def save(self):
         if not self.index_path or not self.metadata_path:
             raise ValueError("index_path/metadata_path not configured for VectorDB.save()")
-        faiss.write_index(self.index, self.index_path)
-        self._save_records()
+        # Write both to temp files first, then swap them in, so a crash mid-write
+        # never leaves a half-written file behind.
+        index_tmp = self.index_path + ".tmp"
+        metadata_tmp = self.metadata_path + ".tmp"
+        faiss.write_index(self.index, index_tmp)
+        with open(metadata_tmp, "w") as f:
+            json.dump(self._records, f)
+        os.replace(index_tmp, self.index_path)
+        os.replace(metadata_tmp, self.metadata_path)
 
     def _evict(self):
         """Drop TTL-expired and (if over max_size) least-recently-used entries,
@@ -107,14 +105,30 @@ class VectorDB:
         self.index = new_index
         self._records = [self._records[i] for i in keep]
 
-    def _load_records(self):
-        if not self.metadata_path or not os.path.exists(self.metadata_path):
-            return []
-        with open(self.metadata_path, "r") as f:
-            return json.load(f)
+    def _load(self):
+        """Load the index and metadata from disk, or start empty if they're missing or broken.
 
-    def _save_records(self):
-        tmp_path = self.metadata_path + ".tmp"
-        with open(tmp_path, "w") as f:
-            json.dump(self._records, f)
-        os.replace(tmp_path, self.metadata_path)
+        Outputs: (faiss.Index, list) - the index and its matching records
+        """
+        index = faiss.IndexFlatL2(self.dimension)
+        records = []
+        try:
+            if self.index_path and os.path.exists(self.index_path):
+                index = faiss.read_index(self.index_path)
+            if self.metadata_path and os.path.exists(self.metadata_path):
+                with open(self.metadata_path, "r") as f:
+                    records = json.load(f)
+        except Exception as e:
+            logger.warning("Could not read cache files (%s), starting with an empty cache.", e)
+            return faiss.IndexFlatL2(self.dimension), []
+
+        # Can happen if a crash landed between the two renames in save().
+        if index.ntotal != len(records):
+            logger.warning(
+                "Cache files are out of sync (index has %d vectors, metadata has %d entries) "
+                "in %r / %r, starting with an empty cache.",
+                index.ntotal, len(records), self.index_path, self.metadata_path,
+            )
+            return faiss.IndexFlatL2(self.dimension), []
+
+        return index, records
