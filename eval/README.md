@@ -6,16 +6,17 @@ guessing a number.
 
 ## Why this exists
 
-`SmartCache` calls a cache hit when FAISS `IndexFlatL2` distance between a
-query and the nearest stored question is below `CACHE_MAX_DISTANCE`. That
-number is a property of `EMBEDDING_MODEL_NAME`, not a universal constant -
-different embedding models spread the same paraphrase / non-paraphrase pairs
-across different distance ranges. Change the model and the old threshold has
-no guaranteed relationship to the new distance scale.
+`SmartCache` checks the top `search_k` nearest stored questions (FAISS
+`IndexFlatL2`) and calls it a hit if any fresh one is closer than
+`CACHE_MAX_DISTANCE`. That number is a property of `EMBEDDING_MODEL_NAME`,
+not a universal constant: different embedding models spread the same
+paraphrase / non-paraphrase pairs across different distance ranges. Change
+the model and the old threshold has no guaranteed relationship to the new
+distance scale.
 
 ## Dataset
 
-[Quora Question Pairs](https://huggingface.co/datasets/AlekseyKorshuk/quora-question-pairs) -
+[Quora Question Pairs](https://huggingface.co/datasets/AlekseyKorshuk/quora-question-pairs):
 a public, human-labeled corpus of ~404K question pairs marked duplicate /
 not-duplicate. `is_duplicate=1` → a pair the cache *should* hit on
 (paraphrase); `is_duplicate=0` → a pair it *should* miss on (different
@@ -31,12 +32,12 @@ python eval/scripts/fetch_qqp_sample.py --hit-count 300 --miss-count 300
 
 # Embeds every pair, sweeps candidate thresholds, reports precision/recall/F1.
 python -m eval.tune_threshold
-python -m eval.tune_threshold --min-precision 0.9
+python -m eval.tune_threshold --min-precision 0.85
 ```
 
 `eval/data/qqp_pairs.json` is committed, so `tune_threshold.py` needs no
-network access by default - only re-run the fetch script if you want a
-different/larger sample.
+network access by default. Only re-run the fetch script if you want a
+different or larger sample.
 
 ## How it works
 
@@ -47,6 +48,11 @@ different/larger sample.
    computes squared L2 distance per pair (matching FAISS `IndexFlatL2`'s
    metric), sweeps candidate thresholds across the observed distance range,
    and scores each one against the labels (precision / recall / F1).
+3. Below the table, the script also prints a "Recommended" threshold: the
+   one with the highest recall that still keeps precision at or above
+   `--min-precision` (default `0.95`). With `all-MiniLM-L6-v2` no threshold
+   reaches 95%, so the default run prints "No threshold reaches..." and you
+   pick from the table instead, or pass a lower `--min-precision`.
 
 ## Current results (`all-MiniLM-L6-v2`)
 
@@ -59,13 +65,14 @@ different/larger sample.
 | 0.685 | 66.1% | 93.5% | 77.4% |
 | 0.872+ | ~61% and falling | 100.0% | falling |
 
-Precision tops out around 88-91% (only at very low recall, ~12-21%) - that's
-a real limit of this model's semantic separation on hard pairs, not a bug.
-`CACHE_MAX_DISTANCE=0.56` is the best precision/recall balance (F1) found,
-favoring catching more true paraphrases over minimizing wrong cache hits.
+Precision tops out around 88-91%, and only at very low recall (~12-21%).
+That's a real limit of this model's semantic separation on hard pairs, not a
+bug. The default `CACHE_MAX_DISTANCE=0.56` was read off this table as the
+best F1 score, favoring catching more true paraphrases over minimizing wrong
+cache hits.
 
 ## Re-tuning after a model change
 
 If `EMBEDDING_MODEL_NAME` changes, re-run `python -m eval.tune_threshold`
 and update `CACHE_MAX_DISTANCE` (in `.env` or the default in
-`core/config.py`) to match the new sweep - do not carry the old value over.
+`core/config.py`) to match the new sweep. Do not carry the old value over.

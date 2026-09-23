@@ -27,16 +27,21 @@ of exact-duplicate traffic.
 ## How it works
 
 ```
-question ─▶ Embedder ─▶ VectorDB.search (FAISS, L2 distance)
+question ─▶ Embedder ─▶ VectorDB.search (FAISS, top search_k neighbors,
+                              │         TTL-expired ones skipped)
                               │
-                distance < CACHE_MAX_DISTANCE?
+          any neighbor with distance < CACHE_MAX_DISTANCE?
                     │                    │
                    yes                  no
                     │                    │
-              return cached          call the LLM (OpenRouter),
-              answer, no LLM         cache the new answer,
-              call                   return it
+              return the closest     call the LLM (OpenRouter),
+              one's cached answer,   cache the new answer,
+              no LLM call            return it
 ```
+
+Checking the top `search_k` neighbors (default 5) instead of only the nearest
+one matters when TTL is enabled: if the closest match has expired, a slightly
+further but still fresh match can still produce a hit.
 
 - **`core/embedder.py`**: wraps `SentenceTransformer`, turns text into vectors.
 - **`core/vector_db.py`**: owns the FAISS index plus per-entry metadata
@@ -44,7 +49,8 @@ question ─▶ Embedder ─▶ VectorDB.search (FAISS, L2 distance)
   eviction so the index doesn't grow unbounded. Persists to disk
   (`index.faiss` + `metadata.json`).
 - **`core/cache_logic.py`** (`SmartCache`): the public interface, `query()` /
-  `update()` / `save()`, combining the embedder and vector DB.
+  `update()` / `save()`, combining the embedder and vector DB. `query()` returns
+  the answer of the closest fresh neighbor under the threshold, or `None` on a miss.
 - **`core/llm_client.py`**: thin wrapper around the OpenAI SDK, pointed at
   [OpenRouter](https://openrouter.ai/), used only on a cache miss.
 - **`core/config.py`**: every tunable (model names, distance threshold,
@@ -52,7 +58,7 @@ question ─▶ Embedder ─▶ VectorDB.search (FAISS, L2 distance)
 
 ## Setup
 
-Requires Python 3.10+.
+Requires Python 3.12+ (the pinned `numpy>=2.5.3` needs it).
 
 ```bash
 python -m venv .venv
@@ -139,22 +145,31 @@ default, so none of this is required.
 | `OPENROUTER_KEY`               | none                    | API key for real LLM calls. Required unless you only use `--mock`.       |
 | `EMBEDDING_MODEL_NAME`         | `all-MiniLM-L6-v2`      | `sentence-transformers` model used to embed questions.                   |
 | `EMBEDDING_DIMENSION`          | `384`                   | Must match the embedding model's output dimension.                       |
-| `CACHE_MAX_DISTANCE`           | `0.56`                  | Max squared L2 distance for a cache hit. Lower = stricter matching. Depends on `EMBEDDING_MODEL_NAME` - see [Tuning the threshold](#tuning-the-threshold). |
+| `CACHE_MAX_DISTANCE`           | `0.56`                  | Max squared L2 distance for a cache hit. Lower = stricter matching. Depends on `EMBEDDING_MODEL_NAME`, see [Tuning the threshold](#tuning-the-threshold). |
 | `LLM_MODEL_NAME`                | `openai/gpt-4o-mini`    | OpenRouter model id used on a cache miss.                                |
 | `LOG_LEVEL`                     | `INFO`                  | `DEBUG` / `INFO` / `WARNING` / `ERROR`.                                   |
 | `LLM_PROMPT_COST_PER_1K`        | `0.00015`               | USD/1K prompt tokens, used by `benchmark.py` to estimate $ saved.        |
 | `LLM_COMPLETION_COST_PER_1K`    | `0.0006`                | USD/1K completion tokens, used by `benchmark.py` to estimate $ saved.    |
 
-`SmartCache` also takes constructor overrides (`max_distance`, `cache_dir`,
-`ttl_seconds`, `max_size`, `model_name`, `embedding_dimension`) for anything
-you don't want to set globally via env var.
+`SmartCache` also takes constructor overrides for anything you don't want to
+set globally via env var:
+
+| Argument              | Default                  | Meaning                                                              |
+|-----------------------|--------------------------|----------------------------------------------------------------------|
+| `max_distance`        | `CACHE_MAX_DISTANCE`     | Hit threshold (squared L2 distance).                                 |
+| `cache_dir`           | `cache_data`             | Where `index.faiss` and `metadata.json` are stored.                  |
+| `ttl_seconds`         | `None` (no expiry)       | Entries older than this are ignored on search and dropped on the next insert. |
+| `max_size`            | `1000`                   | Max entries kept; least recently used ones are evicted past this.   |
+| `search_k`            | `5`                      | Nearest neighbors checked per query. Only matters when `ttl_seconds` is set. |
+| `model_name`          | `EMBEDDING_MODEL_NAME`   | Embedding model.                                                     |
+| `embedding_dimension` | `EMBEDDING_DIMENSION`    | Must match the model's output dimension.                             |
 
 ### Tuning the threshold
 
 `CACHE_MAX_DISTANCE` is a property of `EMBEDDING_MODEL_NAME`, not a universal
-constant - the `0.56` default was picked by sweeping candidate thresholds
-against a labeled sample of real question pairs and choosing the best
-precision/recall balance for `all-MiniLM-L6-v2`. See [`eval/README.md`](eval/README.md)
+constant. The `0.56` default was picked by sweeping candidate thresholds
+against a labeled sample of Quora question pairs and taking the one with the
+best F1 score for `all-MiniLM-L6-v2` (72.4% precision, 86.5% recall). See [`eval/README.md`](eval/README.md)
 for the methodology, results, and how to re-tune it if you change the model.
 
 ## Testing
@@ -172,7 +187,7 @@ tests.
 
 ```
 core/
-  cache_logic.py    SmartCache - query / update / save
+  cache_logic.py    SmartCache: query / update / save
   vector_db.py       FAISS index + metadata + TTL/LRU eviction
   embedder.py         sentence-transformers wrapper
   llm_client.py       OpenRouter client + call_llm()
@@ -184,7 +199,7 @@ benchmark.py           cached vs. uncached comparison
 eval/
   scripts/
     fetch_qqp_sample.py  one-off: samples labeled pairs into eval/data/
-  data/                   qqp_pairs.json - committed eval fixture
+  data/                   qqp_pairs.json: committed eval fixture
   tune_threshold.py      sweeps CACHE_MAX_DISTANCE, reports precision/recall/F1
 main.py                minimal scripted example
 tests/                 pytest suite
