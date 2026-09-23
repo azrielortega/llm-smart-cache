@@ -38,6 +38,29 @@ class SmartCache:
             ttl_seconds=ttl_seconds,
             max_size=max_size,
         )
+        self._check_embedding_model()
+
+    def _check_embedding_model(self):
+        """Refuse to reuse a cache built by a different embedding model, then record the current one.
+
+        Vectors from different models aren't comparable, even when they have the
+        same dimension, so mixing them would silently produce wrong hits.
+        """
+        path = os.path.join(self.cache_dir, "embedding_model.txt")
+        current = self.embedder.model_name
+
+        if os.path.exists(path) and self.db.index.ntotal > 0:
+            with open(path) as f:
+                saved = f.read().strip()
+            if saved != current:
+                raise RuntimeError(
+                    f"Cache in {self.cache_dir!r} was built with embedding model {saved!r}, "
+                    f"but the current model is {current!r}. Delete that folder or use a "
+                    f"different cache_dir."
+                )
+
+        with open(path, "w") as f:
+            f.write(current)
 
     def query(self, user_text):
         query_vector = self.embedder.encode(user_text)

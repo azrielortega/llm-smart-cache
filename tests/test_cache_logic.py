@@ -90,6 +90,31 @@ def test_miss_does_not_mark_anything_as_used(cache):
     assert cache.db._records[0]["last_accessed"] == 0
 
 
+def test_reload_with_same_embedding_model_works(tmp_path, fake_sentence_transformer):
+    cache_dir = str(tmp_path / "cache")
+    SmartCache(cache_dir=cache_dir, model_name="model-a").update("How to bake a cake?", "Preheat.")
+
+    reloaded = SmartCache(cache_dir=cache_dir, model_name="model-a", max_distance=0.05)
+    assert reloaded.query("How to bake a cake?") == "Preheat."
+
+
+def test_reload_with_different_embedding_model_is_refused(tmp_path, fake_sentence_transformer):
+    cache_dir = str(tmp_path / "cache")
+    SmartCache(cache_dir=cache_dir, model_name="model-a").update("How to bake a cake?", "Preheat.")
+
+    with pytest.raises(RuntimeError, match="model-a"):
+        SmartCache(cache_dir=cache_dir, model_name="model-b")
+
+
+def test_empty_cache_can_switch_embedding_model(tmp_path, fake_sentence_transformer):
+    cache_dir = str(tmp_path / "cache")
+    SmartCache(cache_dir=cache_dir, model_name="model-a")
+
+    SmartCache(cache_dir=cache_dir, model_name="model-b")
+    with open(tmp_path / "cache" / "embedding_model.txt") as f:
+        assert f.read() == "model-b"
+
+
 def test_defaults_come_from_config(tmp_path, fake_sentence_transformer, monkeypatch):
     monkeypatch.setattr("core.cache_logic.CACHE_MAX_DISTANCE", 0.42)
     monkeypatch.setattr("core.cache_logic.EMBEDDING_DIMENSION", 16)

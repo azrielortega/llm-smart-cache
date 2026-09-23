@@ -51,6 +51,9 @@ further but still fresh match can still produce a hit.
 - **`core/cache_logic.py`** (`SmartCache`): the public interface, `query()` /
   `update()` / `save()`, combining the embedder and vector DB. `query()` returns
   the answer of the closest fresh neighbor under the threshold, or `None` on a miss.
+  It also records the embedding model in `embedding_model.txt` and refuses to
+  load a non-empty cache built by a different model, since their vectors
+  aren't comparable.
 - **`core/llm_client.py`**: thin wrapper around the OpenAI SDK, pointed at
   [OpenRouter](https://openrouter.ai/), used only on a cache miss.
 - **`core/config.py`**: every tunable (model names, distance threshold,
@@ -143,7 +146,7 @@ default, so none of this is required.
 | Variable                      | Default                | Meaning                                                                 |
 |--------------------------------|------------------------|--------------------------------------------------------------------------|
 | `OPENROUTER_KEY`               | none                    | API key for real LLM calls. Required unless you only use `--mock`.       |
-| `EMBEDDING_MODEL_NAME`         | `all-MiniLM-L6-v2`      | `sentence-transformers` model used to embed questions.                   |
+| `EMBEDDING_MODEL_NAME`         | `all-MiniLM-L6-v2`      | `sentence-transformers` model used to embed questions. Changing it needs a fresh `cache_dir` (or delete `cache_data/`). |
 | `EMBEDDING_DIMENSION`          | `384`                   | Must match the embedding model's output dimension.                       |
 | `CACHE_MAX_DISTANCE`           | `0.56`                  | Max squared L2 distance for a cache hit. Lower = stricter matching. Depends on `EMBEDDING_MODEL_NAME`, see [Tuning the threshold](#tuning-the-threshold). |
 | `LLM_MODEL_NAME`                | `openai/gpt-4o-mini`    | OpenRouter model id used on a cache miss.                                |
@@ -157,7 +160,7 @@ set globally via env var:
 | Argument              | Default                  | Meaning                                                              |
 |-----------------------|--------------------------|----------------------------------------------------------------------|
 | `max_distance`        | `CACHE_MAX_DISTANCE`     | Hit threshold (squared L2 distance).                                 |
-| `cache_dir`           | `cache_data`             | Where `index.faiss` and `metadata.json` are stored.                  |
+| `cache_dir`           | `cache_data`             | Where `index.faiss`, `metadata.json` and `embedding_model.txt` are stored. |
 | `ttl_seconds`         | `None` (no expiry)       | Entries older than this are ignored on search and dropped on the next insert. |
 | `max_size`            | `1000`                   | Max entries kept; least recently used ones are evicted past this.   |
 | `search_k`            | `5`                      | Nearest neighbors checked per query. Only matters when `ttl_seconds` is set. |
