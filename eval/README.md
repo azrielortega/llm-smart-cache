@@ -76,3 +76,5 @@ cache hits.
 If `EMBEDDING_MODEL_NAME` changes, re-run `python -m eval.tune_threshold`
 and update `CACHE_MAX_DISTANCE` (in `.env` or the default in
 `core/config.py`) to match the new sweep. Do not carry the old value over.
+Also start from an empty cache: `SmartCache` refuses to load one built by a
+different embedding model.
