@@ -45,6 +45,7 @@ class SmartCache:
 
         for result in results:
             if result["distance"] < self.max_distance:
+                self.db.touch(result["id"])
                 logger.debug("Cache HIT (distance=%.4f) for: %r", result["distance"], user_text)
                 return result["metadata"]["answer"]
 

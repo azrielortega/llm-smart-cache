@@ -68,6 +68,28 @@ def test_ttl_expired_nearest_match_falls_through_to_next_fresh_match(tmp_path, f
     assert cache.query("How to bake a cake?") == "fresh answer"
 
 
+def test_only_the_hit_entry_is_marked_as_used(tmp_path, fake_sentence_transformer):
+    cache = SmartCache(cache_dir=str(tmp_path / "cache"), max_distance=0.05, embedding_dimension=384)
+    cache.update("How to bake a cake?", "Preheat the oven to 350F.")
+    cache.update("What is the capital of France?", "Paris.")
+    for record in cache.db._records:
+        record["last_accessed"] = 0
+
+    assert cache.query("How to bake a cake?") == "Preheat the oven to 350F."
+
+    hit, other = cache.db._records
+    assert hit["last_accessed"] > 0
+    assert other["last_accessed"] == 0  # returned by search() as a neighbor, but not a hit
+
+
+def test_miss_does_not_mark_anything_as_used(cache):
+    cache.update("How to bake a cake?", "Preheat the oven to 350F.")
+    cache.db._records[0]["last_accessed"] = 0
+
+    assert cache.query("What is the capital of France?") is None
+    assert cache.db._records[0]["last_accessed"] == 0
+
+
 def test_defaults_come_from_config(tmp_path, fake_sentence_transformer, monkeypatch):
     monkeypatch.setattr("core.cache_logic.CACHE_MAX_DISTANCE", 0.42)
     monkeypatch.setattr("core.cache_logic.EMBEDDING_DIMENSION", 16)

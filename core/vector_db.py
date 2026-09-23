@@ -15,8 +15,8 @@ class VectorDB:
       - ttl_seconds: entries older than this (by creation time) are treated as
         expired on read, and are physically dropped on the next `add()`.
       - max_size: if set, `add()` trims down to the `max_size` most-recently-used
-        entries (by last read time) after every insert, so the index can't grow
-        unbounded.
+        entries (by insert time or last `touch()`) after every insert, so the
+        index can't grow unbounded. `search()` alone does not count as a use.
     Both are optional and independent; leave either as None to disable it.
     """
 
@@ -62,9 +62,15 @@ class VectorDB:
             record = self._records[idx]
             if self.ttl_seconds is not None and (now - record["created_at"]) > self.ttl_seconds:
                 continue  # expired: treat as a miss, physically dropped on next add()
-            record["last_accessed"] = now
-            results.append({"distance": distance, "metadata": record["metadata"]})
+            results.append({"id": int(idx), "distance": distance, "metadata": record["metadata"]})
         return results
+
+    def touch(self, record_id):
+        """Mark an entry as used, so LRU eviction keeps it.
+
+        Inputs:  record_id (int) - the "id" from a search() result
+        """
+        self._records[record_id]["last_accessed"] = time.time()
 
     def save(self):
         if not self.index_path or not self.metadata_path:
