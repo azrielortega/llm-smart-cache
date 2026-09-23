@@ -13,7 +13,7 @@ load_dotenv()
 
 def get_response(cache, client, user_input):
     cached_answer = cache.query(user_input)
-    if cached_answer:
+    if cached_answer is not None:
         return cached_answer
 
     completion = call_llm(client, user_input)
