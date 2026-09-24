@@ -1,7 +1,7 @@
 import logging
 import os
 
-from core.config import CACHE_MAX_DISTANCE, EMBEDDING_DIMENSION
+from core.config import CACHE_MAX_DISTANCE, EMBEDDING_DIMENSION, LLM_MODEL_NAME
 from core.embedder import Embedder
 from core.vector_db import VectorDB
 
@@ -24,8 +24,9 @@ class SmartCache:
 
     def __init__(self, max_distance=None, cache_dir="cache_data",
                  ttl_seconds=None, max_size=1000, model_name=None,
-                 embedding_dimension=None, search_k=5):
+                 embedding_dimension=None, search_k=5, llm_model_name=None):
         self.embedder = Embedder(model_name=model_name)
+        self.llm_model_name = llm_model_name or LLM_MODEL_NAME
         self.max_distance = CACHE_MAX_DISTANCE if max_distance is None else max_distance
         self.cache_dir = cache_dir
         self.search_k = search_k
@@ -38,23 +39,24 @@ class SmartCache:
             ttl_seconds=ttl_seconds,
             max_size=max_size,
         )
-        self._check_embedding_model()
+        # Vectors from different embedding models aren't comparable, even at the
+        # same dimension; answers from a different LLM would be silently stale.
+        self._check_model("embedding_model.txt", "embedding", self.embedder.model_name)
+        self._check_model("llm_model.txt", "LLM", self.llm_model_name)
 
-    def _check_embedding_model(self):
-        """Refuse to reuse a cache built by a different embedding model, then record the current one.
+    def _check_model(self, filename, kind, current):
+        """Refuse to reuse a non-empty cache built with a different model, then record the current one.
 
-        Vectors from different models aren't comparable, even when they have the
-        same dimension, so mixing them would silently produce wrong hits.
+        Inputs:  filename (str) - record file in cache_dir, kind (str) - label for the error, current (str) - model in use
         """
-        path = os.path.join(self.cache_dir, "embedding_model.txt")
-        current = self.embedder.model_name
+        path = os.path.join(self.cache_dir, filename)
 
         if os.path.exists(path) and self.db.index.ntotal > 0:
             with open(path) as f:
                 saved = f.read().strip()
             if saved != current:
                 raise RuntimeError(
-                    f"Cache in {self.cache_dir!r} was built with embedding model {saved!r}, "
+                    f"Cache in {self.cache_dir!r} was built with {kind} model {saved!r}, "
                     f"but the current model is {current!r}. Delete that folder or use a "
                     f"different cache_dir."
                 )

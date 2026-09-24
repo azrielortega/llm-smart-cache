@@ -121,11 +121,29 @@ def test_empty_cache_can_switch_embedding_model(tmp_path, fake_sentence_transfor
         assert f.read() == "model-b"
 
 
+def test_reload_with_different_llm_model_is_refused(tmp_path, fake_sentence_transformer):
+    cache_dir = str(tmp_path / "cache")
+    SmartCache(cache_dir=cache_dir, llm_model_name="llm-a").update("How to bake a cake?", "Preheat.")
+
+    with pytest.raises(RuntimeError, match="LLM model 'llm-a'"):
+        SmartCache(cache_dir=cache_dir, llm_model_name="llm-b")
+
+
+def test_reload_with_same_llm_model_works(tmp_path, fake_sentence_transformer):
+    cache_dir = str(tmp_path / "cache")
+    SmartCache(cache_dir=cache_dir, llm_model_name="llm-a").update("How to bake a cake?", "Preheat.")
+
+    reloaded = SmartCache(cache_dir=cache_dir, llm_model_name="llm-a", max_distance=0.05)
+    assert reloaded.query("How to bake a cake?") == "Preheat."
+
+
 def test_defaults_come_from_config(tmp_path, fake_sentence_transformer, monkeypatch):
     monkeypatch.setattr("core.cache_logic.CACHE_MAX_DISTANCE", 0.42)
     monkeypatch.setattr("core.cache_logic.EMBEDDING_DIMENSION", 16)
+    monkeypatch.setattr("core.cache_logic.LLM_MODEL_NAME", "llm-x")
 
     cache = SmartCache(cache_dir=str(tmp_path / "cache"))
 
     assert cache.max_distance == 0.42
     assert cache.db.dimension == 16
+    assert cache.llm_model_name == "llm-x"
