@@ -144,7 +144,7 @@ default, so none of this is required.
 |--------------------------------|------------------------|--------------------------------------------------------------------------|
 | `OPENROUTER_KEY`               | none                    | API key for real LLM calls. Required unless you only use `--mock`.       |
 | `EMBEDDING_MODEL_NAME`         | `all-MiniLM-L6-v2`      | `sentence-transformers` model used to embed questions. Changing it needs a fresh `cache_dir` (or delete `cache_data/`). |
-| `CACHE_MAX_DISTANCE`           | `0.56`                  | Max squared L2 distance for a cache hit. Lower = stricter matching. Depends on `EMBEDDING_MODEL_NAME`, see [Tuning the threshold](#tuning-the-threshold). |
+| `CACHE_MAX_DISTANCE`           | `0.25`                  | Max squared L2 distance for a cache hit. Lower = stricter matching. Depends on `EMBEDDING_MODEL_NAME`, see [Tuning the threshold](#tuning-the-threshold). |
 | `LLM_MODEL_NAME`                | `openai/gpt-4o-mini`    | OpenRouter model id used on a cache miss. Changing it needs a fresh `cache_dir` (or delete `cache_data/`). |
 | `LOG_LEVEL`                     | `INFO`                  | `DEBUG` / `INFO` / `WARNING` / `ERROR`.                                   |
 | `LLM_PROMPT_COST_PER_1K`        | `0.00015`               | USD/1K prompt tokens, used by `benchmark.py` to estimate $ saved.        |
@@ -167,9 +167,10 @@ set globally via env var:
 ### Tuning the threshold
 
 `CACHE_MAX_DISTANCE` is a property of `EMBEDDING_MODEL_NAME`, not a universal
-constant. The `0.56` default was picked by sweeping candidate thresholds
-against a labeled sample of Quora question pairs and taking the one with the
-best F1 score for `all-MiniLM-L6-v2` (72.4% precision, 86.5% recall). See [`eval/README.md`](eval/README.md)
+constant. The `0.25` default was picked by sweeping candidate thresholds
+against a labeled sample of Quora question pairs and favoring precision for
+`all-MiniLM-L6-v2` (86.2% precision, 47.0% recall): a wrong cached answer
+costs more than an extra LLM call. See [`eval/README.md`](eval/README.md)
 for the methodology, results, and how to re-tune it if you change the model.
 
 ## Testing

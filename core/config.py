@@ -23,7 +23,7 @@ def _get_float(name, default):
 
 
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
-CACHE_MAX_DISTANCE = _get_float("CACHE_MAX_DISTANCE", 0.56)
+CACHE_MAX_DISTANCE = _get_float("CACHE_MAX_DISTANCE", 0.25)
 LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "openai/gpt-4o-mini")
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")

@@ -58,18 +58,21 @@ different or larger sample.
 
 | threshold | precision | recall | F1 |
 |---|---|---|---|
-| 0.249 | 86.2% | 47.0% | 60.8% |
+| **0.249 (current default, rounded to 0.25)** | **86.2%** | **47.0%** | **60.8%** |
 | 0.311 (old default) | 83.9% | 57.5% | 68.2% |
 | 0.436 | 78.2% | 75.5% | 76.8% |
-| **0.561 (current default, rounded to 0.56)** | **72.4%** | **86.5%** | **78.8% ← best F1** |
+| 0.561 (previous default) | 72.4% | 86.5% | 78.8% ← best F1 |
 | 0.685 | 66.1% | 93.5% | 77.4% |
 | 0.872+ | ~61% and falling | 100.0% | falling |
 
 Precision tops out around 88-91%, and only at very low recall (~12-21%).
 That's a real limit of this model's semantic separation on hard pairs, not a
-bug. The default `CACHE_MAX_DISTANCE=0.56` was read off this table as the
-best F1 score, favoring catching more true paraphrases over minimizing wrong
-cache hits.
+bug. The default `CACHE_MAX_DISTANCE=0.25` was read off this table as the
+loosest threshold keeping precision above 85%
+(`python -m eval.tune_threshold --min-precision 0.85`). A wrong cache hit
+serves an answer to a different question, while a miss only costs one extra
+LLM call, so precision is favored over recall. Stricter values barely help:
+precision stays around 85-91% while recall collapses.
 
 ## Re-tuning after a model change
 
