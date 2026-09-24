@@ -41,6 +41,9 @@ def test_encode_wraps_model_encode_failure(monkeypatch):
         def __init__(self, model_name):
             pass
 
+        def get_embedding_dimension(self):
+            return 384 # Dummy Dimension Value
+
         def encode(self, texts):
             raise RuntimeError("boom")
 
@@ -60,3 +63,11 @@ def test_explicit_model_name_overrides_config(fake_sentence_transformer, monkeyp
     monkeypatch.setattr("core.embedder.EMBEDDING_MODEL_NAME", "configured-default")
     embedder = Embedder(model_name="explicit-model")
     assert embedder.model_name == "explicit-model"
+
+
+def test_dimension_is_read_from_model(fake_sentence_transformer, monkeypatch):
+    monkeypatch.setattr(
+        "core.embedder.SentenceTransformer",
+        lambda name: fake_sentence_transformer(name, dimension=16),
+    )
+    assert Embedder(model_name="small-model").dimension == 16

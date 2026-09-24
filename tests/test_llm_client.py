@@ -10,7 +10,6 @@ def cache(tmp_path, fake_sentence_transformer):
     return SmartCache(
         cache_dir=str(tmp_path / "cache"),
         max_distance=0.05,
-        embedding_dimension=384,
     )
 
 

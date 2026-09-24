@@ -144,7 +144,6 @@ default, so none of this is required.
 |--------------------------------|------------------------|--------------------------------------------------------------------------|
 | `OPENROUTER_KEY`               | none                    | API key for real LLM calls. Required unless you only use `--mock`.       |
 | `EMBEDDING_MODEL_NAME`         | `all-MiniLM-L6-v2`      | `sentence-transformers` model used to embed questions. Changing it needs a fresh `cache_dir` (or delete `cache_data/`). |
-| `EMBEDDING_DIMENSION`          | `384`                   | Must match the embedding model's output dimension.                       |
 | `CACHE_MAX_DISTANCE`           | `0.56`                  | Max squared L2 distance for a cache hit. Lower = stricter matching. Depends on `EMBEDDING_MODEL_NAME`, see [Tuning the threshold](#tuning-the-threshold). |
 | `LLM_MODEL_NAME`                | `openai/gpt-4o-mini`    | OpenRouter model id used on a cache miss. Changing it needs a fresh `cache_dir` (or delete `cache_data/`). |
 | `LOG_LEVEL`                     | `INFO`                  | `DEBUG` / `INFO` / `WARNING` / `ERROR`.                                   |
@@ -162,7 +161,6 @@ set globally via env var:
 | `max_size`            | `1000`                   | Max entries kept; least recently used ones are evicted past this.   |
 | `search_k`            | `5`                      | Nearest neighbors checked per query. Only matters when `ttl_seconds` is set. |
 | `model_name`          | `EMBEDDING_MODEL_NAME`   | Embedding model.                                                     |
-| `embedding_dimension` | `EMBEDDING_DIMENSION`    | Must match the model's output dimension.                             |
 | `llm_model_name`      | `LLM_MODEL_NAME`         | LLM the cached answers come from. Changing it needs a fresh `cache_dir`. |
 
 ### Tuning the threshold

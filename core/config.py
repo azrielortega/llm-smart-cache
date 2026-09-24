@@ -12,16 +12,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def _get_int(name, default):
-    value = os.getenv(name)
-    if value is None:
-        return default
-    try:
-        return int(value)
-    except ValueError:
-        raise ValueError(f"Env var {name}={value!r} is not a valid int")
-
-
 def _get_float(name, default):
     value = os.getenv(name)
     if value is None:
@@ -33,7 +23,6 @@ def _get_float(name, default):
 
 
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
-EMBEDDING_DIMENSION = _get_int("EMBEDDING_DIMENSION", 384)
 CACHE_MAX_DISTANCE = _get_float("CACHE_MAX_DISTANCE", 0.56)
 LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "openai/gpt-4o-mini")
 

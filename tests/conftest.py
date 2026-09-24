@@ -35,6 +35,9 @@ class FakeSentenceTransformer:
         self.model_name = model_name
         self.dimension = dimension
 
+    def get_embedding_dimension(self):
+        return self.dimension
+
     def encode(self, texts, **kwargs):
         vectors = []
         for text in texts:

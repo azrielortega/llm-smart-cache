@@ -10,7 +10,6 @@ def cache(tmp_path, fake_sentence_transformer):
     return SmartCache(
         cache_dir=str(tmp_path / "cache"),
         max_distance=0.05,
-        embedding_dimension=384,
     )
 
 
@@ -46,10 +45,10 @@ def test_update_skips_empty_answer(cache, answer):
 
 def test_update_persists_to_disk(tmp_path, fake_sentence_transformer):
     cache_dir = str(tmp_path / "cache")
-    original = SmartCache(cache_dir=cache_dir, max_distance=0.05, embedding_dimension=384)
+    original = SmartCache(cache_dir=cache_dir, max_distance=0.05)
     original.update("How to bake a cake?", "Preheat the oven to 350F.")
 
-    reloaded = SmartCache(cache_dir=cache_dir, max_distance=0.05, embedding_dimension=384)
+    reloaded = SmartCache(cache_dir=cache_dir, max_distance=0.05)
     assert reloaded.query("How to bake a cake?") == "Preheat the oven to 350F."
 
 
@@ -57,7 +56,6 @@ def test_ttl_expired_nearest_match_falls_through_to_next_fresh_match(tmp_path, f
     cache = SmartCache(
         cache_dir=str(tmp_path / "cache"),
         max_distance=0.05,
-        embedding_dimension=384,
         ttl_seconds=100,
     )
     query_vector = cache.embedder.encode("How to bake a cake?")
@@ -75,7 +73,7 @@ def test_ttl_expired_nearest_match_falls_through_to_next_fresh_match(tmp_path, f
 
 
 def test_only_the_hit_entry_is_marked_as_used(tmp_path, fake_sentence_transformer):
-    cache = SmartCache(cache_dir=str(tmp_path / "cache"), max_distance=0.05, embedding_dimension=384)
+    cache = SmartCache(cache_dir=str(tmp_path / "cache"), max_distance=0.05)
     cache.update("How to bake a cake?", "Preheat the oven to 350F.")
     cache.update("What is the capital of France?", "Paris.")
     for record in cache.db._records:
@@ -139,11 +137,22 @@ def test_reload_with_same_llm_model_works(tmp_path, fake_sentence_transformer):
 
 def test_defaults_come_from_config(tmp_path, fake_sentence_transformer, monkeypatch):
     monkeypatch.setattr("core.cache_logic.CACHE_MAX_DISTANCE", 0.42)
-    monkeypatch.setattr("core.cache_logic.EMBEDDING_DIMENSION", 16)
     monkeypatch.setattr("core.cache_logic.LLM_MODEL_NAME", "llm-x")
 
     cache = SmartCache(cache_dir=str(tmp_path / "cache"))
 
     assert cache.max_distance == 0.42
-    assert cache.db.dimension == 16
     assert cache.llm_model_name == "llm-x"
+
+
+def test_index_dimension_comes_from_embedding_model(tmp_path, fake_sentence_transformer, monkeypatch):
+    monkeypatch.setattr(
+        "core.embedder.SentenceTransformer",
+        lambda name: fake_sentence_transformer(name, dimension=16),
+    )
+
+    cache = SmartCache(cache_dir=str(tmp_path / "cache"), max_distance=0.05)
+    cache.update("How to bake a cake?", "Preheat.")
+
+    assert cache.db.dimension == 16
+    assert cache.query("How to bake a cake?") == "Preheat."

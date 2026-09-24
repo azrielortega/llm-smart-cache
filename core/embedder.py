@@ -13,6 +13,10 @@ class Embedder:
                 f"Failed to load embedding model {self.model_name!r}: {e}"
             ) from e
 
+        self.dimension = self.model.get_embedding_dimension()
+        if not self.dimension:
+            raise RuntimeError(f"Embedding model {self.model_name!r} did not report its output dimension")
+
     def encode(self, text):
         if not isinstance(text, str) or not text.strip():
             raise ValueError(f"Cannot embed empty or invalid text: {text!r}")
