@@ -11,5 +11,5 @@ jobs:
         with:
           python-version: "3.12"
       # Only what the tests import: conftest.py stubs sentence-transformers, so torch isn't needed.
-      - run: pip install numpy faiss-cpu python-dotenv pytest
+      - run: pip install numpy faiss-cpu python-dotenv pytest openai
       - run: pytest
