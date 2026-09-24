@@ -17,7 +17,7 @@ import time
 from dotenv import load_dotenv
 
 from core.cache_logic import SmartCache
-from core.llm_client import build_client, call_llm
+from core.llm_client import build_client, get_or_call
 from core.logging_config import setup_logging
 from core.mock_llm import MockClient
 
@@ -33,14 +33,8 @@ def ask(cache, client, question):
     Returns (answer, hit, latency_seconds).
     """
     start = time.perf_counter()
-    cached_answer = cache.query(question)
-    if cached_answer is not None:
-        return cached_answer, True, time.perf_counter() - start
-
-    completion = call_llm(client, question)
-    answer = completion.choices[0].message.content
-    cache.update(question, answer)
-    return answer, False, time.perf_counter() - start
+    answer, completion = get_or_call(cache, client, question)
+    return answer, completion is None, time.perf_counter() - start
 
 
 def print_result(answer, hit, latency):

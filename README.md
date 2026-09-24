@@ -123,17 +123,13 @@ Configuration.)
 
 ```python
 from core.cache_logic import SmartCache
-from core.llm_client import build_client, call_llm
+from core.llm_client import build_client, get_or_call
 
 cache = SmartCache()
 client = build_client()
 
-question = "How do I bake a cake?"
-answer = cache.query(question)
-if answer is None:
-    completion = call_llm(client, question)
-    answer = completion.choices[0].message.content
-    cache.update(question, answer)
+# completion is None on a cache hit, or the raw LLM completion on a miss.
+answer, completion = get_or_call(cache, client, "How do I bake a cake?")
 
 cache.save()
 ```
@@ -193,7 +189,7 @@ core/
   cache_logic.py    SmartCache: query / update / save
   vector_db.py       FAISS index + metadata + TTL/LRU eviction
   embedder.py         sentence-transformers wrapper
-  llm_client.py       OpenRouter client + call_llm()
+  llm_client.py       OpenRouter client + call_llm() + get_or_call()
   mock_llm.py          fake client for --mock
   logging_config.py    setup_logging()
   config.py             env-var settings
