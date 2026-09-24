@@ -35,3 +35,16 @@ def test_hit_returns_cached_answer_without_llm_call(cache, client):
 
     assert completion is None
     assert answer == "Preheat the oven to 350F."
+
+
+def test_none_answer_is_not_cached(cache, client, monkeypatch):
+    completion = client.chat.completions.create(model="m", messages=[{"role": "user", "content": "q"}])
+    completion.choices[0].message.content = None
+    monkeypatch.setattr("core.llm_client.call_llm", lambda *_: completion)
+
+    get_or_call(cache, client, "How to bake a cake?")
+    answer, completion = get_or_call(cache, client, "How to bake a cake?")
+
+    assert answer is None
+    assert completion is not None
+    assert cache.db.index.ntotal == 0

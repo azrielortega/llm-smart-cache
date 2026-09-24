@@ -76,6 +76,16 @@ class SmartCache:
         return None
 
     def update(self, question, answer):
+        """Cache an answer for a question, skipping empty answers.
+
+        Inputs:  question (str), answer (str | None) - None/blank (e.g. refusals, filtered output) is not stored
+        """
+        # A stored None/blank answer would read back as a miss on every lookup,
+        # adding a duplicate entry each time instead of ever being a hit.
+        if not isinstance(answer, str) or not answer.strip():
+            logger.warning("Not caching empty answer for: %r", question)
+            return
+
         vector = self.embedder.encode(question)
         self.db.add(vector, {"question": question, "answer": answer})
         self.db.save()

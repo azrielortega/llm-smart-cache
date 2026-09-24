@@ -38,6 +38,12 @@ def test_update_rejects_empty_question(cache):
         cache.update("   ", "some answer")
 
 
+@pytest.mark.parametrize("answer", [None, "", "   "])
+def test_update_skips_empty_answer(cache, answer):
+    cache.update("How to bake a cake?", answer)
+    assert cache.db.index.ntotal == 0
+
+
 def test_update_persists_to_disk(tmp_path, fake_sentence_transformer):
     cache_dir = str(tmp_path / "cache")
     original = SmartCache(cache_dir=cache_dir, max_distance=0.05, embedding_dimension=384)
