@@ -1,3 +1,4 @@
+import heapq
 import json
 import logging
 import os
@@ -21,7 +22,10 @@ class VectorDB:
         self.ttl_seconds = ttl_seconds
         self.max_size = max_size
 
+        # _records maps each stable FAISS id to its entry, so eviction can remove
+        # entries by id instead of rebuilding the index around them.
         self.index, self._records = self._load()
+        self._next_id = max(self._records, default=-1) + 1
 
     def add(self, vector, metadata):
         """Store a vector with its metadata, then evict expired and over-capacity entries.
@@ -29,8 +33,10 @@ class VectorDB:
         Inputs:  vector (np.ndarray) - shape (1, dimension), metadata (dict) - returned by search() on a match
         """
         now = time.time()
-        self.index.add(vector.astype('float32'))
-        self._records.append({"metadata": metadata, "created_at": now, "last_accessed": now})
+        record_id = self._next_id
+        self._next_id += 1
+        self.index.add_with_ids(vector.astype('float32'), np.array([record_id], dtype='int64'))
+        self._records[record_id] = {"metadata": metadata, "created_at": now, "last_accessed": now}
         self._evict()
 
     def search(self, vector, k=1):
@@ -42,17 +48,17 @@ class VectorDB:
         if self.index.ntotal == 0:
             return []
 
-        distances, indices = self.index.search(vector.astype('float32'), k)
+        distances, ids = self.index.search(vector.astype('float32'), k)
 
         now = time.time()
         results = []
-        for distance, idx in zip(distances[0], indices[0]):
-            if idx == -1:
+        for distance, record_id in zip(distances[0], ids[0]):
+            if record_id == -1:
                 continue
-            record = self._records[idx]
+            record = self._records[int(record_id)]
             if self.ttl_seconds is not None and (now - record["created_at"]) > self.ttl_seconds:
                 continue  # expired: treat as a miss, physically dropped on next add()
-            results.append({"id": int(idx), "distance": distance, "metadata": record["metadata"]})
+            results.append({"id": int(record_id), "distance": distance, "metadata": record["metadata"]})
         return results
 
     def touch(self, record_id):
@@ -72,45 +78,39 @@ class VectorDB:
         metadata_tmp = self.metadata_path + ".tmp"
         faiss.write_index(self.index, index_tmp)
         with open(metadata_tmp, "w") as f:
-            json.dump(self._records, f)
+            json.dump(self._records, f)  # int ids become string keys; _load() converts them back
         os.replace(index_tmp, self.index_path)
         os.replace(metadata_tmp, self.metadata_path)
 
     def _evict(self):
-        """Drop TTL-expired and (if over max_size) least recently used entries, rebuilding the index from the rest."""
-        if self.index.ntotal == 0:
-            return
-
+        """Remove TTL-expired and (if over max_size) least recently used entries from the index by id."""
         now = time.time()
-        keep = list(range(self.index.ntotal))
-
+        drop = []
         if self.ttl_seconds is not None:
-            keep = [i for i in keep if (now - self._records[i]["created_at"]) <= self.ttl_seconds]
+            drop = [i for i, r in self._records.items() if (now - r["created_at"]) > self.ttl_seconds]
 
-        if self.max_size is not None and len(keep) > self.max_size:
-            keep.sort(key=lambda i: self._records[i]["last_accessed"], reverse=True)
-            keep = keep[:self.max_size]
-            keep.sort()  # restore original relative order for reconstruct
+        if self.max_size is not None and len(self._records) - len(drop) > self.max_size:
+            excess = len(self._records) - len(drop) - self.max_size
+            dropped = set(drop)
+            survivors = (i for i in self._records if i not in dropped)
+            drop += heapq.nsmallest(excess, survivors, key=lambda i: self._records[i]["last_accessed"])
 
-        if len(keep) == self.index.ntotal:
-            return  # nothing to evict
+        if not drop:
+            return
+        self.index.remove_ids(np.array(drop, dtype='int64'))
+        for record_id in drop:
+            del self._records[record_id]
 
-        new_index = faiss.IndexFlatL2(self.dimension)
-        if keep:
-            # IndexFlatL2 stores raw vectors, so reconstruct() recovers them without re-embedding.
-            vectors = np.vstack([self.index.reconstruct(i) for i in keep])
-            new_index.add(vectors)
-
-        self.index = new_index
-        self._records = [self._records[i] for i in keep]
+    def _empty_index(self):
+        return faiss.IndexIDMap(faiss.IndexFlatL2(self.dimension))
 
     def _load(self):
-        """Load the index and metadata from disk, or start empty if they're missing or broken.
+        """Load the index and metadata from disk, or start empty if they're missing, broken or an older format.
 
-        Outputs: (faiss.Index, list) - the index and its matching records
+        Outputs: (faiss.IndexIDMap, dict) - the index and its records keyed by FAISS id
         """
-        index = faiss.IndexFlatL2(self.dimension)
-        records = []
+        index = self._empty_index()
+        records = {}
         try:
             if self.index_path and os.path.exists(self.index_path):
                 index = faiss.read_index(self.index_path)
@@ -119,15 +119,24 @@ class VectorDB:
                     records = json.load(f)
         except Exception as e:
             logger.warning("Could not read cache files (%s), starting with an empty cache.", e)
-            return faiss.IndexFlatL2(self.dimension), []
+            return self._empty_index(), {}
+
+        # Caches saved before entries had stable ids: a plain IndexFlatL2 plus a JSON list.
+        if not isinstance(index, faiss.IndexIDMap) or not isinstance(records, dict):
+            if index.ntotal or records:
+                logger.warning("Cache in %r / %r uses an older format, starting with an empty cache.",
+                               self.index_path, self.metadata_path)
+            return self._empty_index(), {}
+
+        records = {int(record_id): record for record_id, record in records.items()}
 
         # Can happen if a crash landed between the two renames in save().
-        if index.ntotal != len(records):
+        if set(faiss.vector_to_array(index.id_map).tolist()) != set(records):
             logger.warning(
                 "Cache files are out of sync (index has %d vectors, metadata has %d entries) "
                 "in %r / %r, starting with an empty cache.",
                 index.ntotal, len(records), self.index_path, self.metadata_path,
             )
-            return faiss.IndexFlatL2(self.dimension), []
+            return self._empty_index(), {}
 
         return index, records

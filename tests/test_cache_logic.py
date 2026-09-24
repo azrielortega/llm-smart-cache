@@ -78,12 +78,12 @@ def test_only_the_hit_entry_is_marked_as_used(tmp_path, fake_embedder):
     cache = SmartCache(embedder=fake_embedder(), cache_dir=str(tmp_path / "cache"), max_distance=0.05)
     cache.update("How to bake a cake?", "Preheat the oven to 350F.")
     cache.update("What is the capital of France?", "Paris.")
-    for record in cache.db._records:
+    for record in cache.db._records.values():
         record["last_accessed"] = 0
 
     assert cache.query("How to bake a cake?") == "Preheat the oven to 350F."
 
-    hit, other = cache.db._records
+    hit, other = cache.db._records.values()
     assert hit["last_accessed"] > 0
     assert other["last_accessed"] == 0  # returned by search() as a neighbor, but not a hit
 
