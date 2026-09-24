@@ -24,8 +24,9 @@ class SmartCache:
 
     def __init__(self, max_distance=None, cache_dir="cache_data",
                  ttl_seconds=None, max_size=1000, model_name=None,
-                 search_k=5, llm_model_name=None):
-        self.embedder = Embedder(model_name=model_name)
+                 search_k=5, llm_model_name=None, embedder=None):
+        # A passed-in embedder (e.g. a test fake) takes precedence over model_name.
+        self.embedder = embedder or Embedder(model_name=model_name)
         self.llm_model_name = llm_model_name or LLM_MODEL_NAME
         self.max_distance = CACHE_MAX_DISTANCE if max_distance is None else max_distance
         self.cache_dir = cache_dir

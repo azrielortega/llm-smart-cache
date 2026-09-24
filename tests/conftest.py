@@ -21,6 +21,8 @@ if "sentence_transformers" not in sys.modules:
         stub.SentenceTransformer = None
         sys.modules["sentence_transformers"] = stub
 
+from core.embedder import Embedder  # noqa: E402  (must come after the stub above)
+
 
 class FakeSentenceTransformer:
     """Deterministic, dependency-free stand-in for
@@ -45,6 +47,22 @@ class FakeSentenceTransformer:
             rng = np.random.RandomState(seed)
             vectors.append(rng.rand(self.dimension).astype("float32"))
         return np.array(vectors)
+
+
+class FakeEmbedder(Embedder):
+    """Real Embedder (same encode() validation) around FakeSentenceTransformer,
+    built without loading a model, so it can be passed to SmartCache(embedder=...)."""
+
+    def __init__(self, model_name="fake-model", dimension=384):
+        self.model_name = model_name
+        self.model = FakeSentenceTransformer(model_name, dimension)
+        self.dimension = dimension
+
+
+@pytest.fixture
+def fake_embedder():
+    """The FakeEmbedder class, e.g. SmartCache(embedder=fake_embedder("model-a"))."""
+    return FakeEmbedder
 
 
 @pytest.fixture

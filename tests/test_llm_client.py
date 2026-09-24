@@ -6,8 +6,9 @@ from core.mock_llm import MockClient
 
 
 @pytest.fixture
-def cache(tmp_path, fake_sentence_transformer):
+def cache(tmp_path, fake_embedder):
     return SmartCache(
+        embedder=fake_embedder(),
         cache_dir=str(tmp_path / "cache"),
         max_distance=0.05,
     )

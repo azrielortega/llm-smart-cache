@@ -161,6 +161,7 @@ set globally via env var:
 | `max_size`            | `1000`                   | Max entries kept; least recently used ones are evicted past this.   |
 | `search_k`            | `5`                      | Nearest neighbors checked per query. Only matters when `ttl_seconds` is set. |
 | `model_name`          | `EMBEDDING_MODEL_NAME`   | Embedding model.                                                     |
+| `embedder`            | `None`                   | Ready-made `Embedder` to use instead of loading `model_name` (e.g. a test fake). |
 | `llm_model_name`      | `LLM_MODEL_NAME`         | LLM the cached answers come from. Changing it needs a fresh `cache_dir`. |
 
 ### Tuning the threshold
