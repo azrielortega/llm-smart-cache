@@ -1,14 +1,10 @@
 import logging
 
-from dotenv import load_dotenv
-
 from core.cache_logic import SmartCache
 from core.llm_client import build_client, get_or_call
 from core.logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
-
-load_dotenv()
 
 
 def get_response(cache, client, user_input):

@@ -13,8 +13,6 @@ import tempfile
 import time
 from dataclasses import dataclass
 
-from dotenv import load_dotenv
-
 from core.cache_logic import SmartCache
 from core.config import LLM_COMPLETION_COST_PER_1K, LLM_MODEL_NAME, LLM_PROMPT_COST_PER_1K
 from core.llm_client import build_client, call_llm, get_or_call
@@ -185,7 +183,6 @@ def main():
     args = parser.parse_args()
 
     setup_logging()
-    load_dotenv()
 
     client = MockClient() if args.mock else build_client()
 

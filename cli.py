@@ -14,8 +14,6 @@ import argparse
 import logging
 import time
 
-from dotenv import load_dotenv
-
 from core.cache_logic import SmartCache
 from core.llm_client import build_client, get_or_call
 from core.logging_config import setup_logging
@@ -103,7 +101,6 @@ def main():
     args = parser.parse_args()
 
     setup_logging()
-    load_dotenv()
 
     client = MockClient() if args.mock else build_client()
     cache = SmartCache()
