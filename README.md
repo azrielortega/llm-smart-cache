@@ -51,9 +51,10 @@ further but still fresh match can still produce a hit.
 - **`core/cache_logic.py`** (`SmartCache`): the public interface, `query()` /
   `update()` / `save()`, combining the embedder and vector DB. `query()` returns
   the answer of the closest fresh neighbor under the threshold, or `None` on a miss.
-  It also records the embedding model in `embedding_model.txt` and refuses to
-  load a non-empty cache built by a different model, since their vectors
-  aren't comparable.
+  It also records the embedding model in `embedding_model.txt` and the LLM
+  model in `llm_model.txt`, and refuses to load a non-empty cache built with a
+  different one: vectors from different embedding models aren't comparable,
+  and answers from a different LLM would be silently stale.
 - **`core/llm_client.py`**: thin wrapper around the OpenAI SDK, pointed at
   [OpenRouter](https://openrouter.ai/), used only on a cache miss.
 - **`core/config.py`**: every tunable (model names, distance threshold,
@@ -123,17 +124,13 @@ Configuration.)
 
 ```python
 from core.cache_logic import SmartCache
-from core.llm_client import build_client, call_llm
+from core.llm_client import build_client, get_or_call
 
 cache = SmartCache()
 client = build_client()
 
-question = "How do I bake a cake?"
-answer = cache.query(question)
-if answer is None:
-    completion = call_llm(client, question)
-    answer = completion.choices[0].message.content
-    cache.update(question, answer)
+# completion is None on a cache hit, or the raw LLM completion on a miss.
+answer, completion = get_or_call(cache, client, "How do I bake a cake?")
 
 cache.save()
 ```
@@ -147,9 +144,8 @@ default, so none of this is required.
 |--------------------------------|------------------------|--------------------------------------------------------------------------|
 | `OPENROUTER_KEY`               | none                    | API key for real LLM calls. Required unless you only use `--mock`.       |
 | `EMBEDDING_MODEL_NAME`         | `all-MiniLM-L6-v2`      | `sentence-transformers` model used to embed questions. Changing it needs a fresh `cache_dir` (or delete `cache_data/`). |
-| `EMBEDDING_DIMENSION`          | `384`                   | Must match the embedding model's output dimension.                       |
 | `CACHE_MAX_DISTANCE`           | `0.56`                  | Max squared L2 distance for a cache hit. Lower = stricter matching. Depends on `EMBEDDING_MODEL_NAME`, see [Tuning the threshold](#tuning-the-threshold). |
-| `LLM_MODEL_NAME`                | `openai/gpt-4o-mini`    | OpenRouter model id used on a cache miss.                                |
+| `LLM_MODEL_NAME`                | `openai/gpt-4o-mini`    | OpenRouter model id used on a cache miss. Changing it needs a fresh `cache_dir` (or delete `cache_data/`). |
 | `LOG_LEVEL`                     | `INFO`                  | `DEBUG` / `INFO` / `WARNING` / `ERROR`.                                   |
 | `LLM_PROMPT_COST_PER_1K`        | `0.00015`               | USD/1K prompt tokens, used by `benchmark.py` to estimate $ saved.        |
 | `LLM_COMPLETION_COST_PER_1K`    | `0.0006`                | USD/1K completion tokens, used by `benchmark.py` to estimate $ saved.    |
@@ -160,12 +156,13 @@ set globally via env var:
 | Argument              | Default                  | Meaning                                                              |
 |-----------------------|--------------------------|----------------------------------------------------------------------|
 | `max_distance`        | `CACHE_MAX_DISTANCE`     | Hit threshold (squared L2 distance).                                 |
-| `cache_dir`           | `cache_data`             | Where `index.faiss`, `metadata.json` and `embedding_model.txt` are stored. |
+| `cache_dir`           | `cache_data`             | Where `index.faiss`, `metadata.json`, `embedding_model.txt` and `llm_model.txt` are stored. |
 | `ttl_seconds`         | `None` (no expiry)       | Entries older than this are ignored on search and dropped on the next insert. |
 | `max_size`            | `1000`                   | Max entries kept; least recently used ones are evicted past this.   |
 | `search_k`            | `5`                      | Nearest neighbors checked per query. Only matters when `ttl_seconds` is set. |
 | `model_name`          | `EMBEDDING_MODEL_NAME`   | Embedding model.                                                     |
-| `embedding_dimension` | `EMBEDDING_DIMENSION`    | Must match the model's output dimension.                             |
+| `embedder`            | `None`                   | Ready-made `Embedder` to use instead of loading `model_name` (e.g. a test fake). |
+| `llm_model_name`      | `LLM_MODEL_NAME`         | LLM the cached answers come from. Changing it needs a fresh `cache_dir`. |
 
 ### Tuning the threshold
 
@@ -193,7 +190,7 @@ core/
   cache_logic.py    SmartCache: query / update / save
   vector_db.py       FAISS index + metadata + TTL/LRU eviction
   embedder.py         sentence-transformers wrapper
-  llm_client.py       OpenRouter client + call_llm()
+  llm_client.py       OpenRouter client + call_llm() + get_or_call()
   mock_llm.py          fake client for --mock
   logging_config.py    setup_logging()
   config.py             env-var settings

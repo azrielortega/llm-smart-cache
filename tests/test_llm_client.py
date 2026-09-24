@@ -1,0 +1,50 @@
+import pytest
+
+from core.cache_logic import SmartCache
+from core.llm_client import get_or_call
+from core.mock_llm import MockClient
+
+
+@pytest.fixture
+def cache(tmp_path, fake_embedder):
+    return SmartCache(
+        embedder=fake_embedder(),
+        cache_dir=str(tmp_path / "cache"),
+        max_distance=0.05,
+    )
+
+
+@pytest.fixture
+def client(monkeypatch):
+    monkeypatch.setattr("core.mock_llm.time.sleep", lambda _: None)
+    return MockClient()
+
+
+def test_miss_calls_llm_and_caches_answer(cache, client):
+    answer, completion = get_or_call(cache, client, "How to bake a cake?")
+
+    assert completion is not None
+    assert answer == completion.choices[0].message.content
+    assert cache.query("How to bake a cake?") == answer
+
+
+def test_hit_returns_cached_answer_without_llm_call(cache, client):
+    cache.update("How to bake a cake?", "Preheat the oven to 350F.")
+
+    answer, completion = get_or_call(cache, client, "How to bake a cake?")
+
+    assert completion is None
+    assert answer == "Preheat the oven to 350F."
+
+
+def test_none_answer_is_not_cached(cache, client, monkeypatch):
+    completion = client.chat.completions.create(model="m", messages=[{"role": "user", "content": "q"}])
+    completion.choices[0].message.content = None
+    monkeypatch.setattr("core.llm_client.call_llm", lambda *_: completion)
+
+    get_or_call(cache, client, "How to bake a cake?")
+    answer, completion = get_or_call(cache, client, "How to bake a cake?")
+
+    assert answer is None
+    assert completion is not None
+    assert cache.db.index.ntotal == 0

@@ -37,3 +37,19 @@ def call_llm(client, user_input, model=None):
         )
     except Exception as e:
         raise RuntimeError(f"LLM call failed for model {model!r}: {e}") from e
+
+
+def get_or_call(cache, client, question):
+    """Return the cached answer for a question, or call the LLM on a miss and cache its answer.
+
+    Inputs:  cache (SmartCache), client (OpenAI | MockClient), question (str)
+    Outputs: (str, ChatCompletion | None) - the answer, plus the completion on a miss (None on a hit)
+    """
+    cached_answer = cache.query(question)
+    if cached_answer is not None:
+        return cached_answer, None
+
+    completion = call_llm(client, question)
+    answer = completion.choices[0].message.content
+    cache.update(question, answer)
+    return answer, completion

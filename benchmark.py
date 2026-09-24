@@ -13,11 +13,9 @@ import tempfile
 import time
 from dataclasses import dataclass
 
-from dotenv import load_dotenv
-
 from core.cache_logic import SmartCache
 from core.config import LLM_COMPLETION_COST_PER_1K, LLM_MODEL_NAME, LLM_PROMPT_COST_PER_1K
-from core.llm_client import build_client, call_llm
+from core.llm_client import build_client, call_llm, get_or_call
 from core.logging_config import setup_logging
 from core.mock_llm import MockClient
 
@@ -115,15 +113,14 @@ def run_cached(client, cache, queries):
     results = []
     for query in queries:
         start = time.perf_counter()
-        cached_answer = cache.query(query)
-        if cached_answer is not None:
-            results.append(CallResult(latency=time.perf_counter() - start, hit=True))
+        _, completion = get_or_call(cache, client, query)
+        latency = time.perf_counter() - start
+        if completion is None:
+            results.append(CallResult(latency=latency, hit=True))
             continue
 
-        completion = call_llm(client, query)
-        cache.update(query, completion.choices[0].message.content)
         results.append(CallResult(
-            latency=time.perf_counter() - start,
+            latency=latency,
             hit=False,
             prompt_tokens=completion.usage.prompt_tokens,
             completion_tokens=completion.usage.completion_tokens,
@@ -186,7 +183,6 @@ def main():
     args = parser.parse_args()
 
     setup_logging()
-    load_dotenv()
 
     client = MockClient() if args.mock else build_client()
 
