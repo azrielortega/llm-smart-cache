@@ -2,6 +2,7 @@ import heapq
 import json
 import logging
 import os
+import threading
 import time
 
 import faiss
@@ -12,7 +13,8 @@ logger = logging.getLogger(__name__)
 
 class VectorDB:
     """FAISS index plus per-vector metadata and timestamps, kept as one unit so they never drift apart.
-    Optional eviction: `ttl_seconds` (age since insert) and `max_size` (least recently used); None disables either."""
+    Optional eviction: `ttl_seconds` (age since insert) and `max_size` (least recently used); None disables either.
+    Safe to share between threads in one process; not between processes."""
 
     def __init__(self, dimension=384, index_path=None, metadata_path=None,
                  ttl_seconds=None, max_size=None):
@@ -21,6 +23,9 @@ class VectorDB:
         self.metadata_path = metadata_path
         self.ttl_seconds = ttl_seconds
         self.max_size = max_size
+        # One lock for every public method: the index, _records and the save
+        # temp files must never be seen or written half-updated by another thread.
+        self._lock = threading.Lock()
 
         # _records maps each stable FAISS id to its entry, so eviction can remove
         # entries by id instead of rebuilding the index around them.
@@ -32,12 +37,13 @@ class VectorDB:
 
         Inputs:  vector (np.ndarray) - shape (1, dimension), metadata (dict) - returned by search() on a match
         """
-        now = time.time()
-        record_id = self._next_id
-        self._next_id += 1
-        self.index.add_with_ids(vector.astype('float32'), np.array([record_id], dtype='int64'))
-        self._records[record_id] = {"metadata": metadata, "created_at": now, "last_accessed": now}
-        self._evict()
+        with self._lock:
+            now = time.time()
+            record_id = self._next_id
+            self._next_id += 1
+            self.index.add_with_ids(vector.astype('float32'), np.array([record_id], dtype='int64'))
+            self._records[record_id] = {"metadata": metadata, "created_at": now, "last_accessed": now}
+            self._evict()
 
     def search(self, vector, k=1):
         """Find the k nearest stored vectors, skipping TTL-expired ones. Does not count as a use for LRU.
@@ -45,28 +51,32 @@ class VectorDB:
         Inputs:  vector (np.ndarray) - shape (1, dimension), k (int) - neighbors to check
         Outputs: list[dict] - {"id", "distance", "metadata"}, nearest first; may be fewer than k
         """
-        if self.index.ntotal == 0:
-            return []
+        with self._lock:
+            if self.index.ntotal == 0:
+                return []
 
-        distances, ids = self.index.search(vector.astype('float32'), k)
+            distances, ids = self.index.search(vector.astype('float32'), k)
 
-        now = time.time()
-        results = []
-        for distance, record_id in zip(distances[0], ids[0]):
-            if record_id == -1:
-                continue
-            record = self._records[int(record_id)]
-            if self.ttl_seconds is not None and (now - record["created_at"]) > self.ttl_seconds:
-                continue  # expired: treat as a miss, physically dropped on next add()
-            results.append({"id": int(record_id), "distance": distance, "metadata": record["metadata"]})
-        return results
+            now = time.time()
+            results = []
+            for distance, record_id in zip(distances[0], ids[0]):
+                if record_id == -1:
+                    continue
+                record = self._records[int(record_id)]
+                if self.ttl_seconds is not None and (now - record["created_at"]) > self.ttl_seconds:
+                    continue  # expired: treat as a miss, physically dropped on next add()
+                results.append({"id": int(record_id), "distance": distance, "metadata": record["metadata"]})
+            return results
 
     def touch(self, record_id):
-        """Mark an entry as used, so LRU eviction keeps it.
+        """Mark an entry as used, so LRU eviction keeps it. Ignored if it was evicted since the search.
 
         Inputs:  record_id (int) - the "id" from a search() result
         """
-        self._records[record_id]["last_accessed"] = time.time()
+        with self._lock:
+            record = self._records.get(record_id)
+            if record is not None:
+                record["last_accessed"] = time.time()
 
     def save(self):
         """Write the index and metadata to disk atomically; raises ValueError if paths aren't configured."""
@@ -76,11 +86,12 @@ class VectorDB:
         # never leaves a half-written file behind.
         index_tmp = self.index_path + ".tmp"
         metadata_tmp = self.metadata_path + ".tmp"
-        faiss.write_index(self.index, index_tmp)
-        with open(metadata_tmp, "w") as f:
-            json.dump(self._records, f)  # int ids become string keys; _load() converts them back
-        os.replace(index_tmp, self.index_path)
-        os.replace(metadata_tmp, self.metadata_path)
+        with self._lock:
+            faiss.write_index(self.index, index_tmp)
+            with open(metadata_tmp, "w") as f:
+                json.dump(self._records, f)  # int ids become string keys; _load() converts them back
+            os.replace(index_tmp, self.index_path)
+            os.replace(metadata_tmp, self.metadata_path)
 
     def _evict(self):
         """Remove TTL-expired and (if over max_size) least recently used entries from the index by id."""

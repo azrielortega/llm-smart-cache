@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 
 import faiss
@@ -180,3 +181,37 @@ def test_old_format_cache_starts_empty(tmp_path):
     assert db.index.ntotal == 0
     db.add(make_vector(2), {"answer": "new"})  # still usable afterwards
     assert db.search(make_vector(2))[0]["metadata"]["answer"] == "new"
+
+
+def test_concurrent_add_search_touch_and_save_stay_consistent(tmp_path):
+    db = VectorDB(dimension=DIM, max_size=20, index_path=str(tmp_path / "index.faiss"),
+                  metadata_path=str(tmp_path / "metadata.json"))
+    errors = []
+
+    def worker(seed):
+        try:
+            for i in range(200):
+                v = make_vector(seed * 1000 + i)
+                db.add(v, {"answer": f"{seed}-{i}"})
+                for result in db.search(v, k=5):
+                    db.touch(result["id"])
+                if i % 50 == 0:
+                    db.save()
+        except Exception as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=worker, args=(seed,)) for seed in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == []
+    assert db.index.ntotal == len(db._records) == 20
+    assert set(faiss.vector_to_array(db.index.id_map).tolist()) == set(db._records)
+
+
+def test_touch_ignores_evicted_id():
+    db = VectorDB(dimension=DIM)
+    db.touch(123)  # no entry with this id: must not raise
+    assert db._records == {}
