@@ -159,6 +159,7 @@ set globally via env var:
 | `cache_dir`           | `cache_data`             | Where `index.faiss`, `metadata.json`, `embedding_model.txt` and `llm_model.txt` are stored. |
 | `ttl_seconds`         | `None` (no expiry)       | Entries older than this are ignored on search and dropped on the next insert. |
 | `max_size`            | `1000`                   | Max entries kept; least recently used ones are evicted past this.   |
+| `save_every`          | `10`                     | Save to disk after this many new answers (`None` = only on `save()`). Always call `save()` before exiting. |
 | `search_k`            | `5`                      | Nearest neighbors checked per query. Only matters when `ttl_seconds` is set. |
 | `model_name`          | `EMBEDDING_MODEL_NAME`   | Embedding model.                                                     |
 | `embedder`            | `None`                   | Ready-made `Embedder` to use instead of loading `model_name` (e.g. a test fake). |

@@ -14,13 +14,17 @@ class SmartCache:
 
     def __init__(self, max_distance=None, cache_dir="cache_data",
                  ttl_seconds=None, max_size=1000, model_name=None,
-                 search_k=5, llm_model_name=None, embedder=None):
+                 search_k=5, llm_model_name=None, embedder=None, save_every=10):
         # A passed-in embedder (e.g. a test fake) takes precedence over model_name.
         self.embedder = embedder or Embedder(model_name=model_name)
         self.llm_model_name = llm_model_name or LLM_MODEL_NAME
         self.max_distance = CACHE_MAX_DISTANCE if max_distance is None else max_distance
         self.cache_dir = cache_dir
         self.search_k = search_k
+        # Saving rewrites the whole index + metadata, so batch it: every `save_every`
+        # writes (None = only on explicit save()). Callers save() on shutdown.
+        self.save_every = save_every
+        self._unsaved_writes = 0
         os.makedirs(cache_dir, exist_ok=True)
 
         self.db = VectorDB(
@@ -74,7 +78,7 @@ class SmartCache:
         return None
 
     def update(self, question, answer):
-        """Cache an answer for a question and save to disk, skipping empty answers.
+        """Cache an answer for a question, saving to disk every `save_every` writes; skips empty answers.
 
         Inputs:  question (str), answer (str | None) - None/blank (e.g. refusals, filtered output) is not stored
         """
@@ -86,7 +90,11 @@ class SmartCache:
 
         vector = self.embedder.encode(question)
         self.db.add(vector, {"question": question, "answer": answer})
-        self.db.save()
+        self._unsaved_writes += 1
+        if self.save_every and self._unsaved_writes >= self.save_every:
+            self.save()
 
     def save(self):
+        """Write the cache to disk. Call before exiting, or up to `save_every - 1` answers are lost."""
         self.db.save()
+        self._unsaved_writes = 0
