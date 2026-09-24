@@ -10,18 +10,8 @@ logger = logging.getLogger(__name__)
 
 
 class VectorDB:
-    """Owns a FAISS index plus the metadata and eviction bookkeeping (creation /
-    last-access time) for each vector, as a single unit, so a vector, its
-    metadata, and its eviction state can never drift out of sync.
-
-    Eviction policy:
-      - ttl_seconds: entries older than this (by creation time) are treated as
-        expired on read, and are physically dropped on the next `add()`.
-      - max_size: if set, `add()` trims down to the `max_size` most-recently-used
-        entries (by insert time or last `touch()`) after every insert, so the
-        index can't grow unbounded. `search()` alone does not count as a use.
-    Both are optional and independent; leave either as None to disable it.
-    """
+    """FAISS index plus per-vector metadata and timestamps, kept as one unit so they never drift apart.
+    Optional eviction: `ttl_seconds` (age since insert) and `max_size` (least recently used); None disables either."""
 
     def __init__(self, dimension=384, index_path=None, metadata_path=None,
                  ttl_seconds=None, max_size=None):
@@ -34,12 +24,21 @@ class VectorDB:
         self.index, self._records = self._load()
 
     def add(self, vector, metadata):
+        """Store a vector with its metadata, then evict expired and over-capacity entries.
+
+        Inputs:  vector (np.ndarray) - shape (1, dimension), metadata (dict) - returned by search() on a match
+        """
         now = time.time()
         self.index.add(vector.astype('float32'))
         self._records.append({"metadata": metadata, "created_at": now, "last_accessed": now})
         self._evict()
 
     def search(self, vector, k=1):
+        """Find the k nearest stored vectors, skipping TTL-expired ones. Does not count as a use for LRU.
+
+        Inputs:  vector (np.ndarray) - shape (1, dimension), k (int) - neighbors to check
+        Outputs: list[dict] - {"id", "distance", "metadata"}, nearest first; may be fewer than k
+        """
         if self.index.ntotal == 0:
             return []
 
@@ -64,6 +63,7 @@ class VectorDB:
         self._records[record_id]["last_accessed"] = time.time()
 
     def save(self):
+        """Write the index and metadata to disk atomically; raises ValueError if paths aren't configured."""
         if not self.index_path or not self.metadata_path:
             raise ValueError("index_path/metadata_path not configured for VectorDB.save()")
         # Write both to temp files first, then swap them in, so a crash mid-write
@@ -77,9 +77,7 @@ class VectorDB:
         os.replace(metadata_tmp, self.metadata_path)
 
     def _evict(self):
-        """Drop TTL-expired and (if over max_size) least-recently-used entries,
-        rebuilding the index from the survivors. IndexFlatL2 stores raw vectors,
-        so `reconstruct` recovers them without needing to re-embed anything."""
+        """Drop TTL-expired and (if over max_size) least recently used entries, rebuilding the index from the rest."""
         if self.index.ntotal == 0:
             return
 
@@ -99,6 +97,7 @@ class VectorDB:
 
         new_index = faiss.IndexFlatL2(self.dimension)
         if keep:
+            # IndexFlatL2 stores raw vectors, so reconstruct() recovers them without re-embedding.
             vectors = np.vstack([self.index.reconstruct(i) for i in keep])
             new_index.add(vectors)
 

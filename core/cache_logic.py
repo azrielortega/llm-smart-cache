@@ -9,18 +9,8 @@ logger = logging.getLogger(__name__)
 
 
 class SmartCache:
-    """Semantic cache in front of an LLM call.
-
-    Backed by FAISS IndexFlatL2, which returns *squared* L2 distance between
-    embeddings - smaller distance means more semantically similar. A cache hit
-    happens when the closest of the top `search_k` stored questions (skipping
-    any that are TTL-expired) has a distance to the incoming query below
-    `max_distance`. Lower `max_distance` = stricter matching (fewer hits, less
-    risk of returning a wrong cached answer for a different question); higher =
-    looser matching (more hits, more risk of false positives). `search_k` only
-    matters when `ttl_seconds` is set - without TTL, the single nearest
-    neighbor is always the best candidate.
-    """
+    """Semantic cache in front of an LLM call: a question hits when a stored one is
+    within `max_distance` (squared L2, lower = stricter) among its `search_k` nearest fresh neighbors."""
 
     def __init__(self, max_distance=None, cache_dir="cache_data",
                  ttl_seconds=None, max_size=1000, model_name=None,
@@ -66,6 +56,11 @@ class SmartCache:
             f.write(current)
 
     def query(self, user_text):
+        """Look up the cached answer for the closest similar question.
+
+        Inputs:  user_text (str) - the incoming question; raises ValueError if empty
+        Outputs: str | None - the cached answer on a hit, None on a miss
+        """
         query_vector = self.embedder.encode(user_text)
         results = self.db.search(query_vector, k=self.search_k)
 
@@ -79,7 +74,7 @@ class SmartCache:
         return None
 
     def update(self, question, answer):
-        """Cache an answer for a question, skipping empty answers.
+        """Cache an answer for a question and save to disk, skipping empty answers.
 
         Inputs:  question (str), answer (str | None) - None/blank (e.g. refusals, filtered output) is not stored
         """
