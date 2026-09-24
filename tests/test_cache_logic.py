@@ -48,6 +48,7 @@ def test_update_persists_to_disk(tmp_path, fake_embedder):
     cache_dir = str(tmp_path / "cache")
     original = SmartCache(embedder=fake_embedder(), cache_dir=cache_dir, max_distance=0.05)
     original.update("How to bake a cake?", "Preheat the oven to 350F.")
+    original.save()
 
     reloaded = SmartCache(embedder=fake_embedder(), cache_dir=cache_dir, max_distance=0.05)
     assert reloaded.query("How to bake a cake?") == "Preheat the oven to 350F."
@@ -98,7 +99,9 @@ def test_miss_does_not_mark_anything_as_used(cache):
 
 def test_reload_with_same_embedding_model_works(tmp_path, fake_embedder):
     cache_dir = str(tmp_path / "cache")
-    SmartCache(embedder=fake_embedder("model-a"), cache_dir=cache_dir).update("How to bake a cake?", "Preheat.")
+    original = SmartCache(embedder=fake_embedder("model-a"), cache_dir=cache_dir)
+    original.update("How to bake a cake?", "Preheat.")
+    original.save()
 
     reloaded = SmartCache(embedder=fake_embedder("model-a"), cache_dir=cache_dir, max_distance=0.05)
     assert reloaded.query("How to bake a cake?") == "Preheat."
@@ -106,7 +109,9 @@ def test_reload_with_same_embedding_model_works(tmp_path, fake_embedder):
 
 def test_reload_with_different_embedding_model_is_refused(tmp_path, fake_embedder):
     cache_dir = str(tmp_path / "cache")
-    SmartCache(embedder=fake_embedder("model-a"), cache_dir=cache_dir).update("How to bake a cake?", "Preheat.")
+    original = SmartCache(embedder=fake_embedder("model-a"), cache_dir=cache_dir)
+    original.update("How to bake a cake?", "Preheat.")
+    original.save()
 
     with pytest.raises(RuntimeError, match="model-a"):
         SmartCache(embedder=fake_embedder("model-b"), cache_dir=cache_dir)
@@ -123,7 +128,9 @@ def test_empty_cache_can_switch_embedding_model(tmp_path, fake_embedder):
 
 def test_reload_with_different_llm_model_is_refused(tmp_path, fake_embedder):
     cache_dir = str(tmp_path / "cache")
-    SmartCache(embedder=fake_embedder(), cache_dir=cache_dir, llm_model_name="llm-a").update("How to bake a cake?", "Preheat.")
+    original = SmartCache(embedder=fake_embedder(), cache_dir=cache_dir, llm_model_name="llm-a")
+    original.update("How to bake a cake?", "Preheat.")
+    original.save()
 
     with pytest.raises(RuntimeError, match="LLM model 'llm-a'"):
         SmartCache(embedder=fake_embedder(), cache_dir=cache_dir, llm_model_name="llm-b")
@@ -131,7 +138,9 @@ def test_reload_with_different_llm_model_is_refused(tmp_path, fake_embedder):
 
 def test_reload_with_same_llm_model_works(tmp_path, fake_embedder):
     cache_dir = str(tmp_path / "cache")
-    SmartCache(embedder=fake_embedder(), cache_dir=cache_dir, llm_model_name="llm-a").update("How to bake a cake?", "Preheat.")
+    original = SmartCache(embedder=fake_embedder(), cache_dir=cache_dir, llm_model_name="llm-a")
+    original.update("How to bake a cake?", "Preheat.")
+    original.save()
 
     reloaded = SmartCache(embedder=fake_embedder(), cache_dir=cache_dir, llm_model_name="llm-a", max_distance=0.05)
     assert reloaded.query("How to bake a cake?") == "Preheat."
@@ -158,3 +167,26 @@ def test_index_dimension_comes_from_embedding_model(tmp_path, fake_embedder):
 def test_builds_its_own_embedder_when_none_is_passed(tmp_path, fake_sentence_transformer):
     cache = SmartCache(cache_dir=str(tmp_path / "cache"), model_name="model-a")
     assert cache.embedder.model_name == "model-a"
+
+
+def test_update_saves_every_n_writes(tmp_path, fake_embedder):
+    cache_dir = tmp_path / "cache"
+    cache = SmartCache(embedder=fake_embedder(), cache_dir=str(cache_dir), save_every=2)
+
+    cache.update("How to bake a cake?", "Preheat.")
+    assert not (cache_dir / "index.faiss").exists()
+
+    cache.update("What is the capital of France?", "Paris.")
+    reloaded = SmartCache(embedder=fake_embedder(), cache_dir=str(cache_dir), max_distance=0.05)
+    assert reloaded.db.index.ntotal == 2
+
+
+def test_save_every_none_only_saves_explicitly(tmp_path, fake_embedder):
+    cache_dir = tmp_path / "cache"
+    cache = SmartCache(embedder=fake_embedder(), cache_dir=str(cache_dir), save_every=None)
+    for i in range(20):
+        cache.update(f"Question {i}?", "Answer.")
+    assert not (cache_dir / "index.faiss").exists()
+
+    cache.save()
+    assert SmartCache(embedder=fake_embedder(), cache_dir=str(cache_dir)).db.index.ntotal == 20
