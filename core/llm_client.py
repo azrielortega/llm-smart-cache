@@ -20,7 +20,7 @@ def build_client():
     if not api_key:
         raise ValueError("API KEY not found! Set OPENROUTER_KEY in your .env file.")
     return OpenAI(
-        base_url=OPENROUTER_BASE_URL, 
+        base_url=OPENROUTER_BASE_URL,
         api_key=api_key,
         timeout=LLM_TIMEOUT_S,
         max_retries=LLM_MAX_RETRIES

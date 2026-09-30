@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from core.cache_logic import SmartCache
+from core.config import LLM_MAX_RETRIES, LLM_TIMEOUT_S
 from core.llm_client import OPENROUTER_BASE_URL, build_client, call_llm, get_or_call
 from core.mock_llm import MockClient
 
@@ -68,6 +69,13 @@ def test_build_client_points_at_openrouter(monkeypatch):
     client = build_client()
     assert str(client.base_url).rstrip("/") == OPENROUTER_BASE_URL
     assert client.api_key == "test-key"
+
+
+def test_build_client_uses_configured_timeout_and_retries(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_KEY", "test-key")
+    client = build_client()
+    assert client.timeout == LLM_TIMEOUT_S
+    assert client.max_retries == LLM_MAX_RETRIES
 
 
 def test_call_llm_defaults_to_configured_model(monkeypatch):
