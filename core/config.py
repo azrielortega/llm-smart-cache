@@ -21,12 +21,26 @@ def _get_float(name, default):
     except ValueError:
         raise ValueError(f"Env var {name}={value!r} is not a valid float")
 
+def _get_int(name, default):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        number = float(value)
+
+        if not number.is_integer():
+            raise ValueError(f"Env var {name}={value!r} is not a valid integer")
+
+        return number
+    except ValueError:
+        raise ValueError(f"Env var {name}={value!r} is not a valid integer")
+
 
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 CACHE_MAX_DISTANCE = _get_float("CACHE_MAX_DISTANCE", 0.25)
 LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "openai/gpt-4o-mini")
-LLM_TIMEOUT_S = os.getenv("LLM_TIMEOUT_S", 30)
-LLM_MAX_RETRIES = os.getenv("LLM_MAX_RETRIES", 3)
+LLM_TIMEOUT_S = _get_float("LLM_TIMEOUT_S", 30)
+LLM_MAX_RETRIES = _get_int("LLM_MAX_RETRIES", 3)
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # Rough OpenRouter pricing (USD per 1K tokens) for the default LLM_MODEL_NAME
