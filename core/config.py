@@ -25,7 +25,8 @@ def _get_float(name, default):
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 CACHE_MAX_DISTANCE = _get_float("CACHE_MAX_DISTANCE", 0.25)
 LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "openai/gpt-4o-mini")
-
+LLM_TIMEOUT_S = os.getenv("LLM_TIMEOUT_S", 30)
+LLM_MAX_RETRIES = os.getenv("LLM_MAX_RETRIES", 3)
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # Rough OpenRouter pricing (USD per 1K tokens) for the default LLM_MODEL_NAME

@@ -5,7 +5,7 @@ import os
 
 from openai import OpenAI
 
-from core.config import LLM_MODEL_NAME
+from core.config import LLM_MODEL_NAME, LLM_MAX_RETRIES, LLM_TIMEOUT_S
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,12 @@ def build_client():
     api_key = os.getenv("OPENROUTER_KEY")
     if not api_key:
         raise ValueError("API KEY not found! Set OPENROUTER_KEY in your .env file.")
-    return OpenAI(base_url=OPENROUTER_BASE_URL, api_key=api_key)
+    return OpenAI(
+        base_url=OPENROUTER_BASE_URL, 
+        api_key=api_key,
+        timeout=LLM_TIMEOUT_S,
+        max_retries=LLM_MAX_RETRIES
+        )
 
 
 def call_llm(client, user_input, model=None):
