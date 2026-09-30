@@ -83,6 +83,7 @@ class CallResult:
     hit: bool
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    failed: bool = False
 
 
 def estimate_cost(result):
@@ -97,7 +98,12 @@ def run_uncached(client, queries):
     results = []
     for query in queries:
         start = time.perf_counter()
-        completion = call_llm(client, query)
+        try:
+            completion = call_llm(client, query)
+        except RuntimeError as e:
+            logger.warning("Query failed, counting as failure: %s", e)
+            results.append(CallResult(latency=time.perf_counter() - start, hit=False, failed=True))
+            continue
         latency = time.perf_counter() - start
         results.append(CallResult(
             latency=latency,
@@ -113,7 +119,12 @@ def run_cached(client, cache, queries):
     results = []
     for query in queries:
         start = time.perf_counter()
-        _, completion = get_or_call(cache, client, query)
+        try:
+            _, completion = get_or_call(cache, client, query)
+        except RuntimeError as e:
+            logger.warning("Query failed, counting as failure: %s", e)
+            results.append(CallResult(latency=time.perf_counter() - start, hit=False, failed=True))
+            continue
         latency = time.perf_counter() - start
         if completion is None:
             results.append(CallResult(latency=latency, hit=True))
@@ -131,14 +142,18 @@ def run_cached(client, cache, queries):
 def summarize(results):
     total_calls = len(results)
     hits = sum(1 for r in results if r.hit)
-    total_latency = sum(r.latency for r in results)
+
+    ok_results = [r for r in results if not r.failed]
+    total_latency = sum(r.latency for r in ok_results)
+    
     return {
         "total_calls": total_calls,
+        "failures": sum(1 for r in results if r.failed),
         "hits": hits,
-        "hit_rate": hits / total_calls if total_calls else 0.0,
+        "hit_rate": hits / len(ok_results) if ok_results else 0.0,
         "total_latency": total_latency,
-        "avg_latency": total_latency / total_calls if total_calls else 0.0,
-        "total_cost": sum(estimate_cost(r) for r in results),
+        "avg_latency": total_latency / len(ok_results) if ok_results else 0.0,
+        "total_cost": sum(estimate_cost(r) for r in ok_results),
     }
 
 
@@ -148,6 +163,7 @@ def print_report(uncached, cached):
 
     rows = [
         ("Queries", str(uncached["total_calls"]), str(cached["total_calls"])),
+        ("Failed queries", str(uncached["failures"]), str(cached["failures"])),
         ("Cache hit rate", "n/a", f"{cached['hit_rate']:.0%}"),
         ("Total latency", f"{uncached['total_latency']:.2f}s", f"{cached['total_latency']:.2f}s"),
         ("Avg latency/query", f"{uncached['avg_latency'] * 1000:.0f}ms", f"{cached['avg_latency'] * 1000:.0f}ms"),
