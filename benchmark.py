@@ -9,6 +9,7 @@ Usage:
 
 import argparse
 import logging
+import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -76,6 +77,10 @@ QUERY_GROUPS = [
 
 QUERIES = [query for group in QUERY_GROUPS for query in group]
 
+# A dead key or provider outage fails every call (slowly, after retries), so
+# stop early instead of grinding through the whole run and reporting zeros.
+MAX_CONSECUTIVE_FAILURES = 3
+
 
 @dataclass
 class CallResult:
@@ -93,6 +98,19 @@ def estimate_cost(result):
     )
 
 
+def abort_on_consecutive_failures(results):
+    """Exit non-zero if the last MAX_CONSECUTIVE_FAILURES calls all failed.
+
+    Inputs:  results (list[CallResult]) - results collected so far
+    """
+    recent = results[-MAX_CONSECUTIVE_FAILURES:]
+    if len(recent) == MAX_CONSECUTIVE_FAILURES and all(r.failed for r in recent):
+        sys.exit(
+            f"Aborting benchmark: {MAX_CONSECUTIVE_FAILURES} consecutive LLM calls failed "
+            "(bad OPENROUTER_KEY or provider outage?)."
+        )
+
+
 def run_uncached(client, queries):
     """Baseline: call the LLM for every query, with no caching at all."""
     results = []
@@ -103,6 +121,7 @@ def run_uncached(client, queries):
         except RuntimeError as e:
             logger.warning("Query failed, counting as failure: %s", e)
             results.append(CallResult(latency=time.perf_counter() - start, hit=False, failed=True))
+            abort_on_consecutive_failures(results)
             continue
         latency = time.perf_counter() - start
         results.append(CallResult(
@@ -124,6 +143,7 @@ def run_cached(client, cache, queries):
         except RuntimeError as e:
             logger.warning("Query failed, counting as failure: %s", e)
             results.append(CallResult(latency=time.perf_counter() - start, hit=False, failed=True))
+            abort_on_consecutive_failures(results)
             continue
         latency = time.perf_counter() - start
         if completion is None:
