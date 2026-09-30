@@ -28,12 +28,16 @@ def test_get_int_returns_default_when_unset(monkeypatch):
 
 def test_get_int_parses_env_value(monkeypatch):
     monkeypatch.setenv("TEST_INT", "67")
-    assert _get_int("TEST_INT", 67) == 67
+    result = _get_int("TEST_INT", 3)
+    assert result == 67
+    assert isinstance(result, int)
 
 
 def test_get_int_parses_env_value_2(monkeypatch):
     monkeypatch.setenv("TEST_INT", "5.0")
-    assert _get_int("TEST_INT", 5.0) == 5
+    result = _get_int("TEST_INT", 3)
+    assert result == 5
+    assert isinstance(result, int)
 
 
 def test_get_int_rejects_invalid_value_str(monkeypatch):

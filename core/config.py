@@ -28,12 +28,13 @@ def _get_int(name, default):
     try:
         number = float(value)
 
-        if not number.is_integer():
-            raise ValueError(f"Env var {name}={value!r} is not a valid integer")
-
-        return number
     except ValueError:
         raise ValueError(f"Env var {name}={value!r} is not a valid integer")
+
+    if not number.is_integer():
+        raise ValueError(f"Env var {name}={value!r} is not a valid integer")
+
+    return int(number)
 
 
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
