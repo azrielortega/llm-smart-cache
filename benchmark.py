@@ -159,25 +159,37 @@ def run_cached(client, cache, queries):
     return results
 
 
-def summarize(results):
-    total_calls = len(results)
-    hits = sum(1 for r in results if r.hit)
+def failed_indices(uncached, cached):
+    """Find queries that failed in either pass, so both sides are compared on the same set.
 
-    ok_results = [r for r in results if not r.failed]
-    total_latency = sum(r.latency for r in ok_results)
-    
+    Inputs:  uncached, cached (list[CallResult]) - per-query results in QUERIES order
+    Outputs: set[int] - indices to leave out of latency, cost and hit rate
+    """
+    return {i for i, (u, c) in enumerate(zip(uncached, cached)) if u.failed or c.failed}
+
+
+def summarize(results, skipped):
+    """Summarize one pass, leaving out the skipped queries from latency, cost and hit rate.
+
+    Inputs:  results (list[CallResult]), skipped (set[int]) - indices from failed_indices
+    Outputs: dict - counts, hit rate, latency and cost
+    """
+    compared = [r for i, r in enumerate(results) if i not in skipped]
+    hits = sum(1 for r in compared if r.hit)
+    total_latency = sum(r.latency for r in compared)
+
     return {
-        "total_calls": total_calls,
+        "total_calls": len(results),
         "failures": sum(1 for r in results if r.failed),
         "hits": hits,
-        "hit_rate": hits / len(ok_results) if ok_results else 0.0,
+        "hit_rate": hits / len(compared) if compared else 0.0,
         "total_latency": total_latency,
-        "avg_latency": total_latency / len(ok_results) if ok_results else 0.0,
-        "total_cost": sum(estimate_cost(r) for r in ok_results),
+        "avg_latency": total_latency / len(compared) if compared else 0.0,
+        "total_cost": sum(estimate_cost(r) for r in compared),
     }
 
 
-def print_report(uncached, cached):
+def print_report(uncached, cached, skipped_count):
     saved_latency = uncached["total_latency"] - cached["total_latency"]
     saved_cost = uncached["total_cost"] - cached["total_cost"]
 
@@ -200,6 +212,9 @@ def print_report(uncached, cached):
         print(f"{label:<{label_w}}{uncached_val:>{col_w}}{cached_val:>{col_w}}")
     print("-" * (label_w + 2 * col_w))
 
+    if skipped_count:
+        print(f"  {skipped_count} query(s) failed in at least one pass and are left out")
+        print("  of hit rate, latency and cost on both sides.")
     if uncached["total_latency"] > 0:
         print(f"  Latency saved:     {saved_latency:.2f}s "
               f"({saved_latency / uncached['total_latency']:.0%} faster)")
@@ -231,7 +246,8 @@ def main():
         logger.info("Running cached pass (%d queries)...", len(QUERIES))
         cached_results = run_cached(client, cache, QUERIES)
 
-    print_report(summarize(uncached_results), summarize(cached_results))
+    skipped = failed_indices(uncached_results, cached_results)
+    print_report(summarize(uncached_results, skipped), summarize(cached_results, skipped), len(skipped))
 
 
 if __name__ == "__main__":
