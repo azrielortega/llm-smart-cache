@@ -146,6 +146,8 @@ default, so none of this is required.
 | `EMBEDDING_MODEL_NAME`         | `all-MiniLM-L6-v2`      | `sentence-transformers` model used to embed questions. Changing it needs a fresh `cache_dir` (or delete `cache_data/`). |
 | `CACHE_MAX_DISTANCE`           | `0.25`                  | Max squared L2 distance for a cache hit. Lower = stricter matching. Depends on `EMBEDDING_MODEL_NAME`, see [Tuning the threshold](#tuning-the-threshold). |
 | `LLM_MODEL_NAME`                | `openai/gpt-4o-mini`    | OpenRouter model id used on a cache miss. Changing it needs a fresh `cache_dir` (or delete `cache_data/`). |
+| `LLM_TIMEOUT_S`                 | `30`                    | Seconds before an LLM request times out. Each retry gets its own timeout. Must be greater than 0. |
+| `LLM_MAX_RETRIES`               | `3`                     | Retries after a failed LLM call (timeouts, 429s, 5xx), with backoff. Must be a whole number, 0 or greater (`5`, not `5.0`). |
 | `LOG_LEVEL`                     | `INFO`                  | `DEBUG` / `INFO` / `WARNING` / `ERROR`.                                   |
 | `LLM_PROMPT_COST_PER_1K`        | `0.00015`               | USD/1K prompt tokens, used by `benchmark.py` to estimate $ saved.        |
 | `LLM_COMPLETION_COST_PER_1K`    | `0.0006`                | USD/1K completion tokens, used by `benchmark.py` to estimate $ saved.    |

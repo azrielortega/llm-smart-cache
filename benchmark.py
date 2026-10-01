@@ -9,6 +9,7 @@ Usage:
 
 import argparse
 import logging
+import sys
 import tempfile
 import time
 from dataclasses import dataclass
@@ -76,6 +77,10 @@ QUERY_GROUPS = [
 
 QUERIES = [query for group in QUERY_GROUPS for query in group]
 
+# A dead key or provider outage fails every call (slowly, after retries), so
+# stop early instead of grinding through the whole run and reporting zeros.
+MAX_CONSECUTIVE_FAILURES = 3
+
 
 @dataclass
 class CallResult:
@@ -83,6 +88,7 @@ class CallResult:
     hit: bool
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    failed: bool = False
 
 
 def estimate_cost(result):
@@ -92,12 +98,31 @@ def estimate_cost(result):
     )
 
 
+def abort_on_consecutive_failures(results):
+    """Exit non-zero if the last MAX_CONSECUTIVE_FAILURES calls all failed.
+
+    Inputs:  results (list[CallResult]) - results collected so far
+    """
+    recent = results[-MAX_CONSECUTIVE_FAILURES:]
+    if len(recent) == MAX_CONSECUTIVE_FAILURES and all(r.failed for r in recent):
+        sys.exit(
+            f"Aborting benchmark: {MAX_CONSECUTIVE_FAILURES} consecutive LLM calls failed "
+            "(bad OPENROUTER_KEY or provider outage?)."
+        )
+
+
 def run_uncached(client, queries):
     """Baseline: call the LLM for every query, with no caching at all."""
     results = []
     for query in queries:
         start = time.perf_counter()
-        completion = call_llm(client, query)
+        try:
+            completion = call_llm(client, query)
+        except RuntimeError as e:
+            logger.warning("Query failed, counting as failure: %s", e)
+            results.append(CallResult(latency=time.perf_counter() - start, hit=False, failed=True))
+            abort_on_consecutive_failures(results)
+            continue
         latency = time.perf_counter() - start
         results.append(CallResult(
             latency=latency,
@@ -113,7 +138,13 @@ def run_cached(client, cache, queries):
     results = []
     for query in queries:
         start = time.perf_counter()
-        _, completion = get_or_call(cache, client, query)
+        try:
+            _, completion = get_or_call(cache, client, query)
+        except RuntimeError as e:
+            logger.warning("Query failed, counting as failure: %s", e)
+            results.append(CallResult(latency=time.perf_counter() - start, hit=False, failed=True))
+            abort_on_consecutive_failures(results)
+            continue
         latency = time.perf_counter() - start
         if completion is None:
             results.append(CallResult(latency=latency, hit=True))
@@ -128,26 +159,43 @@ def run_cached(client, cache, queries):
     return results
 
 
-def summarize(results):
-    total_calls = len(results)
-    hits = sum(1 for r in results if r.hit)
-    total_latency = sum(r.latency for r in results)
+def failed_indices(uncached, cached):
+    """Find queries that failed in either pass, so both sides are compared on the same set.
+
+    Inputs:  uncached, cached (list[CallResult]) - per-query results in QUERIES order
+    Outputs: set[int] - indices to leave out of latency, cost and hit rate
+    """
+    return {i for i, (u, c) in enumerate(zip(uncached, cached)) if u.failed or c.failed}
+
+
+def summarize(results, skipped):
+    """Summarize one pass, leaving out the skipped queries from latency, cost and hit rate.
+
+    Inputs:  results (list[CallResult]), skipped (set[int]) - indices from failed_indices
+    Outputs: dict - counts, hit rate, latency and cost
+    """
+    compared = [r for i, r in enumerate(results) if i not in skipped]
+    hits = sum(1 for r in compared if r.hit)
+    total_latency = sum(r.latency for r in compared)
+
     return {
-        "total_calls": total_calls,
+        "total_calls": len(results),
+        "failures": sum(1 for r in results if r.failed),
         "hits": hits,
-        "hit_rate": hits / total_calls if total_calls else 0.0,
+        "hit_rate": hits / len(compared) if compared else 0.0,
         "total_latency": total_latency,
-        "avg_latency": total_latency / total_calls if total_calls else 0.0,
-        "total_cost": sum(estimate_cost(r) for r in results),
+        "avg_latency": total_latency / len(compared) if compared else 0.0,
+        "total_cost": sum(estimate_cost(r) for r in compared),
     }
 
 
-def print_report(uncached, cached):
+def print_report(uncached, cached, skipped_count):
     saved_latency = uncached["total_latency"] - cached["total_latency"]
     saved_cost = uncached["total_cost"] - cached["total_cost"]
 
     rows = [
         ("Queries", str(uncached["total_calls"]), str(cached["total_calls"])),
+        ("Failed queries", str(uncached["failures"]), str(cached["failures"])),
         ("Cache hit rate", "n/a", f"{cached['hit_rate']:.0%}"),
         ("Total latency", f"{uncached['total_latency']:.2f}s", f"{cached['total_latency']:.2f}s"),
         ("Avg latency/query", f"{uncached['avg_latency'] * 1000:.0f}ms", f"{cached['avg_latency'] * 1000:.0f}ms"),
@@ -164,6 +212,9 @@ def print_report(uncached, cached):
         print(f"{label:<{label_w}}{uncached_val:>{col_w}}{cached_val:>{col_w}}")
     print("-" * (label_w + 2 * col_w))
 
+    if skipped_count:
+        print(f"  {skipped_count} query(s) failed in at least one pass and are left out")
+        print("  of hit rate, latency and cost on both sides.")
     if uncached["total_latency"] > 0:
         print(f"  Latency saved:     {saved_latency:.2f}s "
               f"({saved_latency / uncached['total_latency']:.0%} faster)")
@@ -195,7 +246,8 @@ def main():
         logger.info("Running cached pass (%d queries)...", len(QUERIES))
         cached_results = run_cached(client, cache, QUERIES)
 
-    print_report(summarize(uncached_results), summarize(cached_results))
+    skipped = failed_indices(uncached_results, cached_results)
+    print_report(summarize(uncached_results, skipped), summarize(cached_results, skipped), len(skipped))
 
 
 if __name__ == "__main__":
